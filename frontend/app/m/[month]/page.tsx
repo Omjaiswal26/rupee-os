@@ -89,7 +89,11 @@ export default function MonthPage() {
       { key: "__ambiguous__", label: "Ambiguous", kind: "ambiguous" },
     ];
     for (const cat of present) {
-      out.push({ key: cat, label: cat, kind: "category" });
+      out.push({
+        key: cat,
+        label: cat === "Other" ? "Uncategorized" : cat,
+        kind: "category",
+      });
     }
     return out;
   }, [summary]);
@@ -122,8 +126,6 @@ export default function MonthPage() {
       setBusy(false);
     }
   }
-
-  const netPositive = (summary?.net_paise || 0) >= 0;
 
   if (loading && !summary) {
     return <p className="text-sm text-muted-foreground">Loading…</p>;
@@ -196,13 +198,15 @@ export default function MonthPage() {
             <Stat label="Income" value={formatINR(summary?.income_paise || 0)} />
             <Stat label="Expenses" value={formatINR(summary?.expense_paise || 0)} />
             <Stat
-              label="Net"
-              value={formatINR(summary?.net_paise || 0)}
-              tone={netPositive ? "good" : "bad"}
+              label="Uncategorized"
+              value={formatINR(summary?.uncategorized_paise || 0)}
+              tone={(summary?.uncategorized_paise || 0) > 0 ? "bad" : undefined}
             />
           </div>
 
-          {summary && <CategoryPie data={summary.category_breakdown || []} />}
+          {summary && (
+            <CategoryPie data={summary.category_breakdown || []} title="By category" />
+          )}
 
           <Card>
             <CardHeader className="space-y-4">
@@ -293,7 +297,11 @@ export default function MonthPage() {
                           <CategoryCell
                             txn={t}
                             categories={categories}
-                            onSaved={(updated) => {
+                            onSaved={(updated, meta) => {
+                              if (meta && meta.applied_count > 1) {
+                                load();
+                                return;
+                              }
                               setTxns((prev) => {
                                 if (chip === "__ambiguous__") {
                                   return prev.filter((x) => x.id !== updated.id);

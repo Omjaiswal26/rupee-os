@@ -30,7 +30,8 @@ export type MonthSummary = {
   month: string;
   income_paise: number;
   expense_paise: number;
-  net_paise: number;
+  uncategorized_paise: number;
+  net_paise?: number;
   transaction_count: number;
   needs_review_count: number;
   category_breakdown: { category: string; amount_paise: number }[];
@@ -136,9 +137,14 @@ export const api = {
       type?: string;
       note?: string;
       create_rule?: boolean;
+      apply_to_matching?: boolean;
     },
   ) =>
-    request<{ transaction: Transaction }>(`/transactions/${id}/classification`, {
+    request<{
+      transaction: Transaction;
+      applied_count: number;
+      pattern?: string;
+    }>(`/transactions/${id}/classification`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

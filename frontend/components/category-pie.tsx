@@ -19,7 +19,7 @@ type Slice = { category: string; amount_paise: number };
 
 export function CategoryPie({
   data,
-  title = "Spend by category",
+  title = "By category",
 }: {
   data: Slice[];
   title?: string;
@@ -30,7 +30,7 @@ export function CategoryPie({
   if (total <= 0) {
     return (
       <div className="rounded-lg border border-border bg-card/40 p-6 text-sm text-muted-foreground">
-        No expense categories yet.
+        No categories yet.
       </div>
     );
   }
@@ -89,7 +89,7 @@ export function CategoryPie({
               className="fill-muted-foreground"
               style={{ fontSize: "6px" }}
             >
-              Expenses
+              Total
             </text>
             <text
               x="50"

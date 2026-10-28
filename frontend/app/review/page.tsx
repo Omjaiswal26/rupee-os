@@ -118,9 +118,20 @@ function ReviewInner() {
                 <CategoryCell
                   txn={t}
                   categories={categories}
-                  onSaved={(updated) =>
-                    setTxns((prev) => prev.filter((x) => x.id !== updated.id))
-                  }
+                  onSaved={(updated, meta) => {
+                    if (meta && meta.applied_count > 1 && meta.pattern) {
+                      const pat = meta.pattern.toLowerCase();
+                      setTxns((prev) =>
+                        prev.filter(
+                          (x) =>
+                            x.id !== updated.id &&
+                            !x.original_description.toLowerCase().includes(pat),
+                        ),
+                      );
+                      return;
+                    }
+                    setTxns((prev) => prev.filter((x) => x.id !== updated.id));
+                  }}
                 />
               </CardContent>
             </Card>

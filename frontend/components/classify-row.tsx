@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CircleHelp } from "lucide-react";
 import { api, type Transaction } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -17,8 +17,26 @@ export function statusLabel(t: Transaction): string {
   if (t.classification_status === "pending") return "Pending classification";
   if (t.classification_status === "needs_review") return "Needs review";
   if (!t.category) return "Uncategorized";
-  if (t.category === "Other") return "Ambiguous (Other)";
+  if (t.category === "Other") return "Uncategorized";
   return t.classification_status;
+}
+
+export function displayCategory(cat?: string | null): string {
+  if (!cat || cat === "Other") return "Uncategorized";
+  return cat;
+}
+
+/** Best-effort payee hint for "apply to all" label (mirrors backend slash parse). */
+function payeeHint(desc: string): string {
+  const parts = desc.split(/[/\\|]/).map((p) => p.trim()).filter(Boolean);
+  const noise = /^(WDL|TFR|UPI|IMPS|NEFT|RTGS|DR|CR|PAY|PAYM|PAYMENT|HDFC|YESB|UTIB|ICIC|SBIN|AXIS|AIRP|PAYTM)$/i;
+  for (const p of parts) {
+    if (p.length < 2 || noise.test(p) || /^\d{3,}$/.test(p)) continue;
+    if (/^AT\d/i.test(p)) continue;
+    const letters = (p.match(/[A-Za-z]/g) || []).length;
+    if (letters >= 2) return p.replace(/\s+/g, " ").trim();
+  }
+  return "";
 }
 
 /** Category cell: plain text, or a small badge that opens a categorize popover. */
@@ -29,14 +47,18 @@ export function CategoryCell({
 }: {
   txn: Transaction;
   categories: string[];
-  onSaved: (updated: Transaction) => void;
+  onSaved: (updated: Transaction, meta?: { applied_count: number; pattern?: string }) => void;
 }) {
   const ambiguous = needsAttention(txn);
   const [open, setOpen] = useState(false);
-  const [category, setCategory] = useState(txn.category && txn.category !== "Other" ? txn.category : "");
+  const [category, setCategory] = useState(
+    txn.category && txn.category !== "Other" ? txn.category : "",
+  );
+  const [applyAll, setApplyAll] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const hint = useMemo(() => payeeHint(txn.original_description), [txn.original_description]);
 
   useEffect(() => {
     if (!open) return;
@@ -61,11 +83,27 @@ export function CategoryCell({
     try {
       const res = await api.correct(txn.id, {
         category,
-        create_rule: true,
-        type: txn.direction === "credit" ? "income" : "expense",
+        create_rule: applyAll,
+        apply_to_matching: applyAll,
+        type:
+          category === "Transfers"
+            ? "transfer"
+            : category === "Investments"
+              ? "investment"
+              : category === "Fees & Charges"
+                ? "fee"
+                : category === "Income"
+                  ? "income"
+                  : txn.direction === "credit"
+                    ? "income"
+                    : "expense",
       });
       setOpen(false);
-      onSaved(res.transaction);
+      setApplyAll(false);
+      onSaved(res.transaction, {
+        applied_count: res.applied_count,
+        pattern: res.pattern,
+      });
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Save failed");
     } finally {
@@ -76,7 +114,7 @@ export function CategoryCell({
   if (!ambiguous) {
     return (
       <span className="text-muted-foreground">
-        {txn.category || "—"}
+        {displayCategory(txn.category)}
         {txn.subcategory ? <span className="text-xs"> / {txn.subcategory}</span> : null}
       </span>
     );
@@ -94,11 +132,11 @@ export function CategoryCell({
         )}
       >
         <CircleHelp className="h-3.5 w-3.5 text-amber-400/90" strokeWidth={2} />
-        <span>{txn.category && txn.category !== "Other" ? txn.category : "Uncategorized"}</span>
+        <span>{displayCategory(txn.category)}</span>
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1.5 w-56 rounded-md border border-border bg-card p-2 shadow-lg">
+        <div className="absolute left-0 top-full z-30 mt-1.5 w-64 rounded-md border border-border bg-card p-2 shadow-lg">
           <p className="mb-2 px-1 text-[11px] text-muted-foreground">{statusLabel(txn)}</p>
           <select
             autoFocus
@@ -111,10 +149,24 @@ export function CategoryCell({
             </option>
             {categories.map((c) => (
               <option key={c} value={c} className="bg-card">
-                {c}
+                {c === "Other" ? "Uncategorized" : c}
               </option>
             ))}
           </select>
+          {hint ? (
+            <label className="mt-2 flex cursor-pointer items-start gap-2 px-1 text-[11px] text-muted-foreground">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={applyAll}
+                onChange={(e) => setApplyAll(e.target.checked)}
+              />
+              <span>
+                Apply to all matching <span className="text-foreground">“{hint}”</span>
+                <span className="block text-[10px] opacity-80">Also saves a rule for future imports</span>
+              </span>
+            </label>
+          ) : null}
           <div className="mt-2 flex justify-end gap-1.5">
             <Button
               type="button"
@@ -132,7 +184,7 @@ export function CategoryCell({
               disabled={!category || saving}
               onClick={save}
             >
-              {saving ? "…" : "Save"}
+              {saving ? "…" : applyAll ? "Apply all" : "Save"}
             </Button>
           </div>
           {err && <p className="mt-1 px-1 text-[11px] text-red-300">{err}</p>}

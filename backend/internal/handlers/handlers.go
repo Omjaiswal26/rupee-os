@@ -269,7 +269,7 @@ func (a *API) CorrectClassification(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body", "detail": err.Error()})
 		return
 	}
-	txn, err := a.Txns.Correct(c.Request.Context(), id, in)
+	res, err := a.Txns.Correct(c.Request.Context(), id, in)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "transaction not found"})
@@ -278,7 +278,11 @@ func (a *API) CorrectClassification(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"transaction": txn})
+	c.JSON(http.StatusOK, gin.H{
+		"transaction":   res.Transaction,
+		"applied_count": res.AppliedCount,
+		"pattern":       res.Pattern,
+	})
 }
 
 func (a *API) ListRules(c *gin.Context) {

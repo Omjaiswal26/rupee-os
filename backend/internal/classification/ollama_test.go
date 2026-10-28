@@ -52,9 +52,55 @@ func TestHasMerchantSignal(t *testing.T) {
 	}
 }
 
+func TestLooksLikePersonPayee(t *testing.T) {
+	cases := []struct {
+		desc string
+		want bool
+	}{
+		{"UPI/DR/333/Shubhi J/AIRP/8827809/Paym", true},
+		{"UPI/DR/222/RAHUL SHARMA/ICIC", true},
+		{"WDL TFR UPI/DR/123/SWIGGY I/UTIB/swiggyinst/Pay", false},
+		{"WDL TFR UPI/DR/111/SAFE GOLD/YESB/SAFEGOLD", false},
+		{"NEFT CR SALARY ACME PVT LTD", false},
+		{"ATM WDL", false},
+	}
+	for _, tc := range cases {
+		if got := LooksLikePersonPayee(tc.desc); got != tc.want {
+			t.Fatalf("%q: got %v want %v", tc.desc, got, tc.want)
+		}
+	}
+}
+
+func TestNormalizePredictionPersonForcedOther(t *testing.T) {
+	p := &Prediction{Category: "Transport", Type: "expense", Confidence: 0.9, Reasoning: "cab"}
+	NormalizePrediction("UPI/DR/333/Shubhi J/AIRP/8827809/Paym", "debit", 1000000, p)
+	if p.Category != "Other" || p.Type != "expense" || p.Confidence > 0.45 {
+		t.Fatalf("%+v", p)
+	}
+	if err := ValidatePrediction(p); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNormalizePredictionLargeCreditSalary(t *testing.T) {
+	p := &Prediction{Category: "Other", Type: "income", Confidence: 0.4}
+	NormalizePrediction("NEFT CR CLOSERX TECHNOLOGIES PVT LTD", "credit", 12_000_000, p)
+	if p.Category != "Income" || p.Type != "income" || p.Confidence < 0.8 {
+		t.Fatalf("%+v", p)
+	}
+}
+
+func TestNormalizePredictionPersonCreditNotSalary(t *testing.T) {
+	p := &Prediction{Category: "Income", Type: "income", Confidence: 0.9}
+	NormalizePrediction("UPI/CR/444/Shubhi J/AIRP/Paym", "credit", 12_000_000, p)
+	if p.Category != "Other" {
+		t.Fatalf("person credit must stay uncategorized: %+v", p)
+	}
+}
+
 func TestNormalizePredictionExpenseNotTransfers(t *testing.T) {
 	p := &Prediction{Category: "Transfers", Type: "expense", Confidence: 0.9, Reasoning: "shop"}
-	NormalizePrediction("debit", p)
+	NormalizePrediction("WDL TFR UPI/DR/456/TOY CORNER/HDFC/vyapar", "debit", 50000, p)
 	if p.Category == "Transfers" || p.Type != "expense" {
 		t.Fatalf("expected spend remap, got %+v", p)
 	}
@@ -62,7 +108,7 @@ func TestNormalizePredictionExpenseNotTransfers(t *testing.T) {
 
 func TestNormalizePredictionAlignsInvestmentType(t *testing.T) {
 	p := &Prediction{Category: "Investments", Type: "transfer", Confidence: 0.9}
-	NormalizePrediction("debit", p)
+	NormalizePrediction("SAFE GOLD", "debit", 100000, p)
 	if p.Type != "investment" || p.Category != "Investments" {
 		t.Fatalf("%+v", p)
 	}
@@ -70,12 +116,19 @@ func TestNormalizePredictionAlignsInvestmentType(t *testing.T) {
 
 func TestNormalizePredictionFoodTransferTypeFixed(t *testing.T) {
 	p := &Prediction{Category: "Food & Dining", Type: "transfer", Confidence: 0.9}
-	NormalizePrediction("debit", p)
+	NormalizePrediction("SWIGGY", "debit", 50000, p)
 	if err := ValidatePrediction(p); err != nil {
 		t.Fatal(err)
 	}
 	if p.Type != "expense" {
 		t.Fatalf("%+v", p)
+	}
+}
+
+func TestRulePatternFromDescription(t *testing.T) {
+	pat := RulePatternFromDescription("WDL TFR UPI/DR/131/Shubhi J/AIRP/8827809/Paym")
+	if pat != "Shubhi J" {
+		t.Fatalf("got %q", pat)
 	}
 }
 
