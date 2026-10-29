@@ -5,13 +5,15 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { api, type MonthSummary, type Transaction } from "@/lib/api";
 import { cn, formatINR, formatMonthLabel } from "@/lib/utils";
+import { displayPayeeName } from "@/lib/payee";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CategoryPie } from "@/components/category-pie";
 import { CategoryCell } from "@/components/classify-row";
+import { MonthHealthCard } from "@/components/month-health-card";
 
-type Chip = { key: string; label: string; kind: "all" | "ambiguous" | "category" };
+type Chip = { key: string; label: string };
 type SortKey = "date" | "amount" | "description" | "category";
 type SortOrder = "asc" | "desc";
 
@@ -26,7 +28,7 @@ export default function MonthPage() {
   const [categories, setCategories] = useState<string[]>([]);
   const [q, setQ] = useState("");
   const [qDebounced, setQDebounced] = useState("");
-  /** "" = all, "__ambiguous__" = attention queue, else category name */
+  /** "" = all, else category name (e.g. Uncategorized, Food & Dining) */
   const [chip, setChip] = useState("");
   const [sort, setSort] = useState<SortKey>("date");
   const [order, setOrder] = useState<SortOrder>("desc");
@@ -35,6 +37,7 @@ export default function MonthPage() {
   const [loading, setLoading] = useState(true);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [wasClassifying, setWasClassifying] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setQDebounced(q), 250);
@@ -46,57 +49,90 @@ export default function MonthPage() {
     setPage(0);
   }, [qDebounced, chip]);
 
-  const statusFilter = chip === "__ambiguous__" ? "attention" : undefined;
-  const categoryFilter =
-    chip && chip !== "__ambiguous__" ? chip : undefined;
+  const categoryFilter = chip || undefined;
 
-  const load = useCallback(() => {
-    setLoading(true);
-    return Promise.all([
-      api.summary(month),
-      api.transactions(month, {
-        q: qDebounced,
-        status: statusFilter,
-        category: categoryFilter,
-        sort,
-        order,
-        limit: PAGE_SIZE,
-        offset: page * PAGE_SIZE,
-      }),
-      api.categories(),
-    ])
-      .then(([s, t, c]) => {
-        setSummary(s);
-        setTxns(t.transactions || []);
-        setTotal(t.total || 0);
-        setCategories(c.categories || []);
-        setError(null);
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load"))
-      .finally(() => setLoading(false));
-  }, [month, qDebounced, statusFilter, categoryFilter, sort, order, page]);
+  const load = useCallback(
+    (opts?: { quiet?: boolean }) => {
+      if (!opts?.quiet) setLoading(true);
+      return Promise.all([
+        api.summary(month),
+        api.transactions(month, {
+          q: qDebounced,
+          category: categoryFilter,
+          sort,
+          order,
+          limit: PAGE_SIZE,
+          offset: page * PAGE_SIZE,
+        }),
+        api.categories(),
+      ])
+        .then(([s, t, c]) => {
+          setSummary(s);
+          setTxns(t.transactions || []);
+          setTotal(t.total || 0);
+          setCategories(c.categories || []);
+          setError(null);
+          return s;
+        })
+        .catch((e) => {
+          setError(e instanceof Error ? e.message : "Failed to load");
+          return null;
+        })
+        .finally(() => {
+          if (!opts?.quiet) setLoading(false);
+        });
+    },
+    [month, qDebounced, categoryFilter, sort, order, page],
+  );
 
   useEffect(() => {
     load();
   }, [load]);
 
+  // Poll summary while classification is in progress.
+  useEffect(() => {
+    if (!summary?.classifying) return;
+    setWasClassifying(true);
+    const id = setInterval(() => {
+      api
+        .summary(month)
+        .then((s) => {
+          setSummary(s);
+          if (!s.classifying) {
+            load({ quiet: true });
+          }
+        })
+        .catch(() => {});
+    }, 2000);
+    return () => clearInterval(id);
+  }, [summary?.classifying, month, load]);
+
+  useEffect(() => {
+    if (wasClassifying && summary && !summary.classifying) {
+      setWasClassifying(false);
+      setActionMsg(
+        `Classified ${summary.transaction_count} · ${summary.needs_review_count} need review`,
+      );
+    }
+  }, [wasClassifying, summary]);
+
   const chips: Chip[] = useMemo(() => {
     const present = (summary?.category_breakdown || [])
       .filter((c) => c.amount_paise > 0)
       .map((c) => c.category);
-    const out: Chip[] = [
-      { key: "", label: "All", kind: "all" },
-      { key: "__ambiguous__", label: "Ambiguous", kind: "ambiguous" },
-    ];
+    const out: Chip[] = [{ key: "", label: "All" }];
     for (const cat of present) {
       out.push({
         key: cat,
         label: cat === "Other" ? "Uncategorized" : cat,
-        kind: "category",
       });
     }
     return out;
   }, [summary]);
+
+  function selectCategory(cat: string) {
+    setChip((prev) => (prev === cat ? "" : cat));
+  }
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const from = total === 0 ? 0 : page * PAGE_SIZE + 1;
@@ -141,8 +177,12 @@ export default function MonthPage() {
           <h1 className="text-2xl font-semibold tracking-tight">{formatMonthLabel(month)}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {summary?.transaction_count || 0} transactions
-            {(summary?.needs_review_count || 0) > 0 && (
-              <span> · {summary?.needs_review_count} need review</span>
+            {summary?.classifying ? (
+              <span> · classifying…</span>
+            ) : (
+              (summary?.needs_review_count || 0) > 0 && (
+                <span> · {summary?.needs_review_count} need review</span>
+              )
             )}
           </p>
         </div>
@@ -161,15 +201,23 @@ export default function MonthPage() {
           </Link>
           <Button
             variant="secondary"
-            disabled={busy || (summary?.transaction_count || 0) === 0}
+            disabled={
+              busy ||
+              summary?.classifying ||
+              (summary?.transaction_count || 0) === 0
+            }
             onClick={onReclassify}
           >
-            {busy ? "Working…" : "Reclassify"}
+            {busy || summary?.classifying ? "Working…" : "Reclassify"}
           </Button>
         </div>
       </div>
 
-      {actionMsg && (
+      {summary?.classifying && (
+        <ClassifyProgress summary={summary} />
+      )}
+
+      {actionMsg && !summary?.classifying && (
         <p className="rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-emerald-300">
           {actionMsg}
         </p>
@@ -204,8 +252,19 @@ export default function MonthPage() {
             />
           </div>
 
+          <MonthHealthCard
+            month={month}
+            classifying={Boolean(summary?.classifying)}
+            enabled={(summary?.transaction_count || 0) > 0}
+          />
+
           {summary && (
-            <CategoryPie data={summary.category_breakdown || []} title="By category" />
+            <CategoryPie
+              data={summary.category_breakdown || []}
+              title="By category"
+              activeCategory={chip}
+              onSelectCategory={selectCategory}
+            />
           )}
 
           <Card>
@@ -228,7 +287,6 @@ export default function MonthPage() {
               <div className="flex flex-wrap gap-1.5">
                 {chips.map((f) => {
                   const active = chip === f.key;
-                  const ambiguous = f.kind === "ambiguous";
                   return (
                     <button
                       key={f.key || "all"}
@@ -236,12 +294,8 @@ export default function MonthPage() {
                       onClick={() => setChip(f.key)}
                       className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
                         active
-                          ? ambiguous
-                            ? "bg-amber-500/90 text-amber-950"
-                            : "bg-primary text-primary-foreground"
-                          : ambiguous
-                            ? "border border-amber-500/40 text-amber-200 hover:bg-amber-500/10"
-                            : "border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                          ? "bg-primary text-primary-foreground"
+                          : "border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
                       }`}
                     >
                       {f.label}
@@ -263,6 +317,7 @@ export default function MonthPage() {
                         order={order}
                         onClick={() => toggleSort("date")}
                       />
+                      <th className="px-5 py-3 font-medium">Name</th>
                       <SortTh
                         label="Description"
                         active={sort === "description"}
@@ -285,12 +340,23 @@ export default function MonthPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {txns.map((t) => (
+                    {txns.map((t) => {
+                      const name = displayPayeeName(t.merchant, t.original_description);
+                      return (
                       <tr key={t.id} className="border-b border-border/50 last:border-0">
                         <td className="whitespace-nowrap px-5 py-3 text-muted-foreground">
                           {t.transaction_date.slice(0, 10)}
                         </td>
-                        <td className="max-w-md truncate px-5 py-3" title={t.original_description}>
+                        <td
+                          className="max-w-[10rem] truncate px-5 py-3 font-medium text-foreground"
+                          title={name}
+                        >
+                          {name}
+                        </td>
+                        <td
+                          className="max-w-[14rem] truncate px-5 py-3 text-xs text-muted-foreground"
+                          title={t.original_description}
+                        >
                           {t.original_description}
                         </td>
                         <td className="px-5 py-3">
@@ -303,7 +369,12 @@ export default function MonthPage() {
                                 return;
                               }
                               setTxns((prev) => {
-                                if (chip === "__ambiguous__") {
+                                // Filtered to Uncategorized: drop once categorized away.
+                                if (
+                                  chip === "Uncategorized" &&
+                                  updated.category &&
+                                  updated.category !== "Other"
+                                ) {
                                   return prev.filter((x) => x.id !== updated.id);
                                 }
                                 return prev.map((x) =>
@@ -323,7 +394,8 @@ export default function MonthPage() {
                           {formatINR(t.amount_paise)}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -359,6 +431,35 @@ export default function MonthPage() {
           </Card>
         </>
       )}
+    </div>
+  );
+}
+
+function ClassifyProgress({ summary }: { summary: MonthSummary }) {
+  const total = summary.transaction_count || 0;
+  const done = Math.max(0, total - (summary.pending_count || 0));
+  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+
+  return (
+    <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <p className="font-medium text-amber-100">Classifying…</p>
+        <p className="tabular-nums text-amber-100/90">
+          {done} / {total}
+          <span className="ml-2 text-xs text-amber-200/70">{pct}%</span>
+        </p>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-amber-950/50">
+        <div
+          className="h-full rounded-full bg-emerald-400 transition-[width] duration-500 ease-out"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <p className="mt-1.5 text-[11px] text-amber-200/60">
+        {summary.pending_count} remaining
+        {(summary.needs_review_count || 0) > 0 &&
+          ` · ${summary.needs_review_count} already flagged for review`}
+      </p>
     </div>
   );
 }

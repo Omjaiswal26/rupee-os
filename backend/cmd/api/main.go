@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
+	"github.com/rupee-os/rupee-os/internal/classification"
 	"github.com/rupee-os/rupee-os/internal/config"
 	"github.com/rupee-os/rupee-os/internal/database"
 	"github.com/rupee-os/rupee-os/internal/handlers"
@@ -40,6 +41,12 @@ func main() {
 		Log:       logger,
 	}
 	txnSvc := &services.TransactionService{DB: db}
+	healthSvc := &services.HealthService{
+		DB:     db,
+		Txns:   txnSvc,
+		Client: classification.NewHealthClient(cfg.OllamaBaseURL, cfg.OllamaHealthModel),
+		Log:    logger,
+	}
 
 	if cfg.Environment == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -50,10 +57,11 @@ func main() {
 	r.MaxMultipartMemory = int64(cfg.MaxUploadMB) << 20
 
 	api := &handlers.API{
-		Imports: importSvc,
-		Txns:    txnSvc,
-		Cfg:     cfg,
-		Log:     logger,
+		Imports:     importSvc,
+		Txns:        txnSvc,
+		MonthHealth: healthSvc,
+		Cfg:         cfg,
+		Log:         logger,
 	}
 	api.Register(r)
 

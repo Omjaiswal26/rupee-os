@@ -54,20 +54,26 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="flex h-full w-56 shrink-0 flex-col border-r border-border bg-background/80">
-      <div className="border-b border-border px-4 py-5">
-        <Link href="/" className="text-lg font-semibold tracking-tight">
+    <aside
+      className={cn(
+        "sticky top-0 z-20 flex h-svh shrink-0 flex-col self-start overflow-hidden",
+        "border-r border-border bg-background/90 backdrop-blur-sm",
+        "w-48 md:w-52 lg:w-56 xl:w-60 2xl:w-64",
+      )}
+    >
+      <div className="shrink-0 border-b border-border px-3 py-4 lg:px-4 lg:py-5">
+        <Link href="/" className="text-base font-semibold tracking-tight lg:text-lg">
           Rupee OS
         </Link>
         <p className="mt-1 text-xs text-muted-foreground">Financial health</p>
       </div>
 
-      <nav className="flex flex-col gap-1 p-3">
+      <nav className="flex shrink-0 flex-col gap-1 p-2 lg:p-3">
         {navLink("/upload", "Upload")}
         {navLink("/review", "Review")}
       </nav>
 
-      <div className="mt-1 px-3">
+      <div className="mt-1 shrink-0 px-2 lg:px-3">
         <label className="mb-1.5 block px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
           Year
         </label>
@@ -84,10 +90,10 @@ export function Sidebar() {
         </select>
       </div>
 
-      <div className="mt-3 px-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+      <div className="mt-3 shrink-0 px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground lg:px-4">
         Months
       </div>
-      <nav className="flex-1 overflow-y-auto p-3 pt-2">
+      <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2 pt-2 lg:p-3">
         <ul className="flex flex-col gap-0.5">
           {months.map((m) => {
             const href = `/m/${m.month}`;
@@ -98,7 +104,7 @@ export function Sidebar() {
                   href={href}
                   title={statusTitle[m.status]}
                   className={cn(
-                    "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
+                    "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors lg:px-3 lg:py-2",
                     active
                       ? "bg-secondary text-foreground"
                       : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
@@ -109,9 +115,9 @@ export function Sidebar() {
                     className={cn("h-2 w-2 shrink-0 rounded-full", statusDot[m.status])}
                     aria-hidden
                   />
-                  <span className="flex-1">{m.label}</span>
+                  <span className="min-w-0 flex-1 truncate">{m.label}</span>
                   {m.transaction_count > 0 && (
-                    <span className="text-[10px] tabular-nums text-muted-foreground">
+                    <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
                       {m.transaction_count}
                     </span>
                   )}

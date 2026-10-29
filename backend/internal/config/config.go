@@ -15,6 +15,7 @@ type Config struct {
 	MaxUploadMB                 int
 	OllamaBaseURL               string
 	OllamaModel                 string
+	OllamaHealthModel           string
 	ClassificationMinConfidence float64
 	ClassifyConcurrency         int
 	LogLevel                    string
@@ -45,6 +46,7 @@ func Load() Config {
 		MaxUploadMB:                 maxMB,
 		OllamaBaseURL:               getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
 		OllamaModel:                 getenv("OLLAMA_MODEL", "qwen2.5:3b"),
+		OllamaHealthModel:           getenv("OLLAMA_HEALTH_MODEL", "qwen2.5:7b"),
 		ClassificationMinConfidence: minConf,
 		ClassifyConcurrency:         classifyConc,
 		LogLevel:                    getenv("LOG_LEVEL", "info"),

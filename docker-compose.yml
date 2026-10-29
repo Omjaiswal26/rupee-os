@@ -54,6 +54,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://rupee:rupee_secret@postgres:5432/rupee_os?sslmode=disable}
       REDIS_ADDR: ${REDIS_ADDR:-redis:6379}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_HEALTH_MODEL: ${OLLAMA_HEALTH_MODEL:-qwen2.5:7b}
       UPLOAD_DIR: /data/uploads
       MIGRATIONS_PATH: /app/migrations
       API_ADDR: ":8080"

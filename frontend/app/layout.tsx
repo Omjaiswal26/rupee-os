@@ -22,9 +22,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="dark">
       <body className={`${geist.variable} ${geistMono.variable} font-sans`}>
-        <div className="flex min-h-screen">
+        <div className="flex min-h-svh">
           <Sidebar />
-          <main className="flex-1 overflow-y-auto p-6 md:p-8">{children}</main>
+          <main className="min-w-0 flex-1 p-5 md:p-6 lg:p-8 xl:p-10">{children}</main>
         </div>
       </body>
     </html>

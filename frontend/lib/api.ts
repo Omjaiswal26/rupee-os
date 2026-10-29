@@ -17,6 +17,7 @@ export type Transaction = {
   import_id: string;
   transaction_date: string;
   original_description: string;
+  merchant?: string | null;
   amount_paise: number;
   currency: string;
   direction: "debit" | "credit";
@@ -33,8 +34,36 @@ export type MonthSummary = {
   uncategorized_paise: number;
   net_paise?: number;
   transaction_count: number;
+  pending_count: number;
+  classified_count: number;
   needs_review_count: number;
+  corrected_count: number;
+  classifying: boolean;
   category_breakdown: { category: string; amount_paise: number }[];
+};
+
+export type MonthHealth = {
+  month: string;
+  score: number;
+  verdict: string;
+  tip: string;
+  signals: {
+    income_paise: number;
+    expense_paise: number;
+    uncategorized_paise: number;
+    investment_paise: number;
+    transaction_count: number;
+    pending_count: number;
+    needs_review_count: number;
+    savings_rate: number;
+    invest_share: number;
+    uncategorized_ratio: number;
+    top_categories: { category: string; amount_paise: number; share: number }[];
+  };
+  model_name: string;
+  generated_at: string;
+  classifying: boolean;
+  stale: boolean;
 };
 
 export type MonthStatus = "empty" | "pending" | "needs_review" | "ready";
@@ -72,6 +101,9 @@ export const api = {
   calendar: (year: number) =>
     request<YearCalendar>(`/months/calendar?year=${year}`),
   summary: (month: string) => request<MonthSummary>(`/months/${month}/summary`),
+  health: (month: string) => request<MonthHealth>(`/months/${month}/health`),
+  generateHealth: (month: string) =>
+    request<MonthHealth>(`/months/${month}/health`, { method: "POST" }),
   transactions: (
     month: string,
     opts: {

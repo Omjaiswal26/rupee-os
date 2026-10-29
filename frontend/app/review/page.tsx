@@ -8,6 +8,7 @@ import { formatINR } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CategoryCell, statusLabel } from "@/components/classify-row";
+import { displayPayeeName } from "@/lib/payee";
 
 function ReviewInner() {
   const search = useSearchParams();
@@ -97,9 +98,12 @@ function ReviewInner() {
             <Card key={t.id} className="border-amber-500/20">
               <CardHeader>
                 <CardTitle className="text-base leading-snug text-foreground">
-                  {t.original_description}
+                  {displayPayeeName(t.merchant, t.original_description)}
                 </CardTitle>
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground" title={t.original_description}>
+                  {t.original_description}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <span>{t.transaction_date.slice(0, 10)}</span>
                   <span>·</span>
                   <span className="tabular-nums">

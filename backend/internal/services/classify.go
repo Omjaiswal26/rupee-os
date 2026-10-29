@@ -110,6 +110,22 @@ func (s *ClassifyService) classifyOne(ctx context.Context, txn *models.Transacti
 		return nil
 	}
 
+	if pred := classification.MatchMerchantKeyword(txn.OriginalDescription); pred != nil {
+		if err := s.applyPrediction(ctx, txn, pred, "merchant_keyword", &pred.Reasoning, false); err != nil {
+			return err
+		}
+		s.Log.Info("classified",
+			"txn_id", txn.ID,
+			"source", "merchant_keyword",
+			"category", pred.Category,
+			"type", pred.Type,
+			"confidence", pred.Confidence,
+			"status", models.ClassificationClassified,
+			"reasoning", truncateReason(pred.Reasoning, 80),
+		)
+		return nil
+	}
+
 	pred, err := s.Client.Classify(ctx, txn.OriginalDescription, txn.AmountPaise, string(txn.Direction))
 	if err != nil {
 		return err
@@ -165,6 +181,9 @@ func (s *ClassifyService) applyPrediction(
 			"transaction_type":      typ,
 			"classification_status": status,
 			"updated_at":            time.Now().UTC(),
+		}
+		if name := classification.ExtractPayeeCandidate(txn.OriginalDescription); name != "" {
+			updates["merchant"] = name
 		}
 		if err := tx.Model(&models.Transaction{}).Where("id = ?", txn.ID).Updates(updates).Error; err != nil {
 			return err

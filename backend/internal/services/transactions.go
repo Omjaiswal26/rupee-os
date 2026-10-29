@@ -29,14 +29,18 @@ type TransactionFilter struct {
 }
 
 type MonthSummary struct {
-	Month                 string           `json:"month"`
-	IncomePaise           int64            `json:"income_paise"`
-	ExpensePaise          int64            `json:"expense_paise"`
-	UncategorizedPaise    int64            `json:"uncategorized_paise"`
-	NetPaise              int64            `json:"net_paise"` // kept for API compat; UI no longer shows it
-	TransactionCount      int64            `json:"transaction_count"`
-	NeedsReviewCount      int64            `json:"needs_review_count"`
-	CategoryBreakdown     []CategoryAmount `json:"category_breakdown"`
+	Month              string           `json:"month"`
+	IncomePaise        int64            `json:"income_paise"`
+	ExpensePaise       int64            `json:"expense_paise"`
+	UncategorizedPaise int64            `json:"uncategorized_paise"`
+	NetPaise           int64            `json:"net_paise"` // kept for API compat; UI no longer shows it
+	TransactionCount   int64            `json:"transaction_count"`
+	PendingCount       int64            `json:"pending_count"`
+	ClassifiedCount    int64            `json:"classified_count"`
+	NeedsReviewCount   int64            `json:"needs_review_count"`
+	CorrectedCount     int64            `json:"corrected_count"`
+	Classifying        bool             `json:"classifying"`
+	CategoryBreakdown  []CategoryAmount `json:"category_breakdown"`
 }
 
 type CategoryAmount struct {
@@ -70,10 +74,14 @@ func (s *TransactionService) Summary(ctx context.Context, monthKey string) (*Mon
 	end := start.AddDate(0, 1, 0)
 
 	type agg struct {
-		Income         int64
-		Expense        int64
-		Uncategorized  int64
-		Count          int64
+		Income        int64
+		Expense       int64
+		Uncategorized int64
+		Count         int64
+		Pending       int64
+		Classified    int64
+		NeedsReview   int64
+		Corrected     int64
 	}
 	var a agg
 	// Income/expense exclude category Other (shown as Uncategorized).
@@ -91,19 +99,17 @@ func (s *TransactionService) Summary(ctx context.Context, monthKey string) (*Mon
 			COALESCE(SUM(CASE
 				WHEN category IS NULL OR category = 'Other'
 				THEN amount_paise ELSE 0 END), 0) AS uncategorized,
-			COUNT(*) AS count
+			COUNT(*) AS count,
+			COALESCE(SUM(CASE WHEN classification_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+			COALESCE(SUM(CASE WHEN classification_status = 'classified' THEN 1 ELSE 0 END), 0) AS classified,
+			COALESCE(SUM(CASE WHEN classification_status = 'needs_review' THEN 1 ELSE 0 END), 0) AS needs_review,
+			COALESCE(SUM(CASE WHEN classification_status = 'corrected' THEN 1 ELSE 0 END), 0) AS corrected
 		FROM transactions
 		WHERE transaction_date >= ? AND transaction_date < ?
 	`, start, end).Scan(&a).Error
 	if err != nil {
 		return nil, err
 	}
-
-	var reviewCount int64
-	_ = s.DB.WithContext(ctx).Model(&models.Transaction{}).
-		Where("transaction_date >= ? AND transaction_date < ? AND classification_status = ?",
-			start, end, models.ClassificationNeedsReview).
-		Count(&reviewCount).Error
 
 	// Pie includes all categories (Transfers, Other/Uncategorized, spend, income).
 	var breakdown []CategoryAmount
@@ -132,7 +138,11 @@ func (s *TransactionService) Summary(ctx context.Context, monthKey string) (*Mon
 		UncategorizedPaise: a.Uncategorized,
 		NetPaise:           a.Income - a.Expense,
 		TransactionCount:   a.Count,
-		NeedsReviewCount:   reviewCount,
+		PendingCount:       a.Pending,
+		ClassifiedCount:    a.Classified,
+		NeedsReviewCount:   a.NeedsReview,
+		CorrectedCount:     a.Corrected,
+		Classifying:        a.Pending > 0,
 		CategoryBreakdown:  breakdown,
 	}, nil
 }
@@ -196,7 +206,25 @@ func (s *TransactionService) List(ctx context.Context, f TransactionFilter) ([]m
 	var rows []models.Transaction
 	err := q.Order(orderClause).
 		Limit(limit).Offset(offset).Find(&rows).Error
-	return rows, total, err
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range rows {
+		enrichMerchant(&rows[i])
+	}
+	return rows, total, nil
+}
+
+func enrichMerchant(txn *models.Transaction) {
+	if txn == nil {
+		return
+	}
+	if txn.Merchant != nil && strings.TrimSpace(*txn.Merchant) != "" {
+		return
+	}
+	if name := classification.ExtractPayeeCandidate(txn.OriginalDescription); name != "" {
+		txn.Merchant = &name
+	}
 }
 
 func listOrderSQL(sort, order string) string {

@@ -23,8 +23,9 @@ import (
 type API struct {
 	Imports *services.ImportService
 	Txns    *services.TransactionService
-	Cfg     config.Config
-	Log     *slog.Logger
+	MonthHealth *services.HealthService
+	Cfg         config.Config
+	Log         *slog.Logger
 }
 
 func (a *API) Register(r *gin.Engine) {
@@ -38,6 +39,8 @@ func (a *API) Register(r *gin.Engine) {
 	r.GET("/months/calendar", a.MonthCalendar)
 	r.GET("/months/:month/summary", a.MonthSummary)
 	r.GET("/months/:month/transactions", a.MonthTransactions)
+	r.GET("/months/:month/health", a.GetMonthHealth)
+	r.POST("/months/:month/health", a.GenerateMonthHealth)
 	r.POST("/months/:month/reclassify", a.ReclassifyMonth)
 	r.DELETE("/months/:month", a.ClearMonth)
 
@@ -193,8 +196,34 @@ func (a *API) ReclassifyMonth(c *gin.Context) {
 	})
 }
 
+func (a *API) GetMonthHealth(c *gin.Context) {
+	month := c.Param("month")
+	rep, err := a.MonthHealth.Get(c.Request.Context(), month)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "health report not generated yet", "month": month})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, rep)
+}
+
+func (a *API) GenerateMonthHealth(c *gin.Context) {
+	month := c.Param("month")
+	rep, err := a.MonthHealth.Generate(c.Request.Context(), month)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, rep)
+}
+
 func (a *API) ClearMonth(c *gin.Context) {
-	if err := a.Imports.ClearMonth(c.Request.Context(), c.Param("month")); err != nil {
+	month := c.Param("month")
+	_ = a.MonthHealth.DeleteMonth(c.Request.Context(), month)
+	if err := a.Imports.ClearMonth(c.Request.Context(), month); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

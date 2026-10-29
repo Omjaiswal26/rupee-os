@@ -298,7 +298,6 @@ var (
 	railTokenRe = regexp.MustCompile(`(?i)^(WDL|TFR|UPI|IMPS|NEFT|RTGS|DR|CR|INFT|NWD|ATW|POS|PUR|GOL|PAY|PAYM|PAYMENT)$`)
 	bankCodeRe  = regexp.MustCompile(`(?i)^(HDFC|YESB|UTIB|ICIC|SBIN|AXIS|PAYTM|OKBIZ|P2M|P2A|AIRP)$`)
 	digitsHeavy = regexp.MustCompile(`^\d{3,}$`)
-	knownMerchantRe = regexp.MustCompile(`(?i)\b(SWIGGY|ZOMATO|AMAZON|FLIPKART|GROWW|ZERODHA|SAFE\s*GOLD|SAFEGOLD|TOY\s*CORNER|UBER|OLA|IRCTC|BIGBASKET|BLINKIT|MYNTRA|AJIO|NETFLIX|SPOTIFY|GOOGLE|APPLE|CRED|PHONEPE|BHARATPE)\b`)
 	salaryCueRe = regexp.MustCompile(`(?i)\b(SALARY|PAYROLL|WAGES|DIVIDEND|INTEREST|NEFT\s*CR.*LTD|PVT\s*LTD|PRIVATE\s*LIMITED)\b`)
 )
 
@@ -405,10 +404,6 @@ func LooksLikePersonPayee(description string) bool {
 	}
 	// At least one word of length >= 2 and overall looks like a name (1–3 words).
 	return letterTokens+initials <= 4
-}
-
-func LooksLikeKnownMerchant(s string) bool {
-	return knownMerchantRe.MatchString(s)
 }
 
 // HasMerchantSignal reports a non-rail name token in a UPI/IMPS/POS narration.

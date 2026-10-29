@@ -114,3 +114,18 @@ type UserRule struct {
 }
 
 func (UserRule) TableName() string { return "user_rules" }
+
+// MonthHealthReport stores a per-month financial health score + AI tip.
+type MonthHealthReport struct {
+	Month        time.Time      `gorm:"type:date;primaryKey" json:"month"`
+	Score        int            `gorm:"not null" json:"score"`
+	Verdict      string         `gorm:"not null" json:"verdict"`
+	Tip          string         `gorm:"not null;default:''" json:"tip"`
+	Signals      datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'" json:"signals"`
+	ModelName    string         `gorm:"not null;default:''" json:"model_name"`
+	GeneratedAt  time.Time      `gorm:"not null" json:"generated_at"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+}
+
+func (MonthHealthReport) TableName() string { return "month_health_reports" }
