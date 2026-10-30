@@ -3,12 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type MonthHealth } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-
-function pct(n: number) {
-  if (!Number.isFinite(n)) return "—";
-  return `${Math.round(n * 100)}%`;
-}
+import { cn, formatPercent, formatSavingsRate } from "@/lib/utils";
 
 function toneForVerdict(verdict: string): "good" | "ok" | "warn" | "bad" {
   switch (verdict) {
@@ -168,28 +163,34 @@ export function MonthHealthCard({
 
       <p className="mt-4 text-sm leading-relaxed text-foreground/90">{report.tip}</p>
 
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="mt-4 grid grid-cols-3 gap-2">
         <Signal
           label="Savings"
-          value={pct(s.savings_rate)}
-          hint={s.savings_rate >= 0.1 ? "ok" : "watch"}
+          value={formatSavingsRate(s.savings_rate, s.income_paise)}
+          hint={
+            s.income_paise < 10_000
+              ? "low income"
+              : s.savings_rate >= 0.1
+                ? "ok"
+                : "watch"
+          }
         />
         <Signal
           label="Invested"
-          value={pct(s.invest_share)}
+          value={formatPercent(s.invest_share)}
           hint={s.invest_share >= 0.15 ? "strong" : "low"}
         />
         <Signal
-          label="Uncateg."
-          value={pct(s.uncategorized_ratio)}
+          label="Uncategorized"
+          value={formatPercent(s.uncategorized_ratio)}
           hint={s.uncategorized_ratio >= 0.15 ? "watch" : "ok"}
         />
-        <Signal
-          label="Review"
-          value={String(s.needs_review_count || 0)}
-          hint="left"
-        />
       </div>
+      {(s.needs_review_count || 0) > 0 && (
+        <p className="mt-3 text-xs text-amber-200/80">
+          {s.needs_review_count} need review
+        </p>
+      )}
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
         <span>

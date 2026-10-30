@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, type MonthStatus, type MonthStatusInfo } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { YearSelect } from "@/components/year-select";
 
 const statusDot: Record<MonthStatus, string> = {
   empty: "bg-zinc-600",
@@ -36,22 +37,8 @@ export function Sidebar() {
       .catch(() => setMonths([]));
   }, [year, pathname]);
 
-  const navLink = (href: string, label: string) => {
-    const active = pathname === href || pathname.startsWith(href + "/");
-    return (
-      <Link
-        href={href}
-        className={cn(
-          "block rounded-md px-3 py-2 text-sm transition-colors",
-          active
-            ? "bg-secondary text-foreground"
-            : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
-        )}
-      >
-        {label}
-      </Link>
-    );
-  };
+  const overviewActive = pathname === "/";
+  const reviewActive = pathname === "/review" || pathname.startsWith("/review/");
 
   return (
     <aside
@@ -61,39 +48,49 @@ export function Sidebar() {
         "w-48 md:w-52 lg:w-56 xl:w-60 2xl:w-64",
       )}
     >
-      <div className="shrink-0 border-b border-border px-3 py-4 lg:px-4 lg:py-5">
+      <div className="shrink-0 border-b border-border px-3 py-3 lg:px-4 lg:py-4">
         <Link href="/" className="text-base font-semibold tracking-tight lg:text-lg">
           Rupee OS
         </Link>
-        <p className="mt-1 text-xs text-muted-foreground">Financial health</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">Financial health</p>
       </div>
 
-      <nav className="flex shrink-0 flex-col gap-1 p-2 lg:p-3">
-        {navLink("/upload", "Upload")}
-        {navLink("/review", "Review")}
+      <nav className="flex shrink-0 flex-col gap-0.5 p-2 lg:p-3">
+        <Link
+          href="/"
+          className={cn(
+            "block rounded-md px-3 py-1.5 text-sm transition-colors",
+            overviewActive
+              ? "bg-secondary text-foreground"
+              : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+          )}
+        >
+          Overview
+        </Link>
+        <Link
+          href="/review"
+          className={cn(
+            "block rounded-md px-3 py-1.5 text-sm transition-colors",
+            reviewActive
+              ? "bg-secondary text-foreground"
+              : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+          )}
+        >
+          Review
+        </Link>
       </nav>
 
-      <div className="mt-1 shrink-0 px-2 lg:px-3">
-        <label className="mb-1.5 block px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+      <div className="mt-0.5 shrink-0 px-2 lg:px-3">
+        <p className="mb-1 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
           Year
-        </label>
-        <select
-          className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-          value={year}
-          onChange={(e) => setYear(Number(e.target.value))}
-        >
-          {years.map((y) => (
-            <option key={y} value={y} className="bg-card">
-              {y}
-            </option>
-          ))}
-        </select>
+        </p>
+        <YearSelect year={year} years={years} onChange={setYear} />
       </div>
 
-      <div className="mt-3 shrink-0 px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground lg:px-4">
+      <div className="mt-2 shrink-0 px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground lg:px-4">
         Months
       </div>
-      <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2 pt-2 lg:p-3">
+      <nav className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 pt-1.5 lg:p-3 lg:pt-2">
         <ul className="flex flex-col gap-0.5">
           {months.map((m) => {
             const href = `/m/${m.month}`;
@@ -104,7 +101,7 @@ export function Sidebar() {
                   href={href}
                   title={statusTitle[m.status]}
                   className={cn(
-                    "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors lg:px-3 lg:py-2",
+                    "flex items-center gap-2 rounded-md px-2.5 py-1 text-sm transition-colors lg:px-3 lg:py-1.5",
                     active
                       ? "bg-secondary text-foreground"
                       : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
@@ -127,7 +124,7 @@ export function Sidebar() {
           })}
         </ul>
 
-        <div className="mt-4 space-y-1.5 border-t border-border px-1 pt-3 text-[10px] text-muted-foreground">
+        <div className="mt-auto space-y-1 border-t border-border px-1 pt-2 text-[10px] text-muted-foreground">
           <div className="flex items-center gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-zinc-600" /> No statement
           </div>

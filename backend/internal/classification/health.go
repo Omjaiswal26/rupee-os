@@ -128,15 +128,15 @@ type healthTipResponse struct {
 	Tip string `json:"tip"`
 }
 
-func (c *HealthClient) GenerateTip(ctx context.Context, monthKey string, signals HealthSignals, score HealthScore) (string, error) {
+func (c *HealthClient) GenerateTip(ctx context.Context, period string, signals HealthSignals, score HealthScore) (string, error) {
 	payload, _ := json.Marshal(map[string]any{
-		"month":   monthKey,
+		"period":  period,
 		"score":   score.Score,
 		"verdict": score.Verdict,
 		"signals": signals,
 	})
-	prompt := fmt.Sprintf(`You are a concise India personal-finance coach. Given ONLY these monthly aggregates (JSON), write ONE tip of at most 2 short sentences.
-Focus on spending vs income, investing, savings, or uncategorized risk. No bullet lists. No markdown. No disclaimers. Plain text only.
+	prompt := fmt.Sprintf(`You are a concise India personal-finance coach. Given ONLY these period aggregates (JSON), write ONE tip of at most 2 short sentences.
+Focus on spending vs income, investing, savings, or uncategorized risk. Do not confuse uncategorized money with "needs review" count — they differ. No bullet lists. No markdown. No disclaimers. Plain text only.
 
 Data:
 %s

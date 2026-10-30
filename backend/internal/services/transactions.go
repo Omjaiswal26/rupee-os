@@ -219,9 +219,7 @@ func enrichMerchant(txn *models.Transaction) {
 	if txn == nil {
 		return
 	}
-	if txn.Merchant != nil && strings.TrimSpace(*txn.Merchant) != "" {
-		return
-	}
+	// Always derive from narration so stale/wrong values (e.g. "DEP") don't stick.
 	if name := classification.ExtractPayeeCandidate(txn.OriginalDescription); name != "" {
 		txn.Merchant = &name
 	}

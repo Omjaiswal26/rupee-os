@@ -295,57 +295,8 @@ func RulePatternFromDescription(desc string) string {
 }
 
 var (
-	railTokenRe = regexp.MustCompile(`(?i)^(WDL|TFR|UPI|IMPS|NEFT|RTGS|DR|CR|INFT|NWD|ATW|POS|PUR|GOL|PAY|PAYM|PAYMENT)$`)
-	bankCodeRe  = regexp.MustCompile(`(?i)^(HDFC|YESB|UTIB|ICIC|SBIN|AXIS|PAYTM|OKBIZ|P2M|P2A|AIRP)$`)
-	digitsHeavy = regexp.MustCompile(`^\d{3,}$`)
 	salaryCueRe = regexp.MustCompile(`(?i)\b(SALARY|PAYROLL|WAGES|DIVIDEND|INTEREST|NEFT\s*CR.*LTD|PVT\s*LTD|PRIVATE\s*LIMITED)\b`)
 )
-
-// ExtractPayeeCandidate returns the most likely payee token from a UPI-like narration.
-func ExtractPayeeCandidate(description string) string {
-	parts := strings.FieldsFunc(description, func(r rune) bool {
-		return r == '/' || r == '\\' || r == '|' || unicode.IsSpace(r)
-	})
-	var nameParts []string
-	for _, part := range parts {
-		p := strings.TrimSpace(part)
-		if len(p) < 1 {
-			continue
-		}
-		up := strings.ToUpper(p)
-		if railTokenRe.MatchString(up) || bankCodeRe.MatchString(up) || digitsHeavy.MatchString(up) {
-			// Flush incomplete name if we hit rail after collecting.
-			if len(nameParts) > 0 {
-				break
-			}
-			continue
-		}
-		if strings.HasPrefix(up, "AT") && len(up) <= 6 {
-			continue
-		}
-		letters := 0
-		for _, r := range up {
-			if r >= 'A' && r <= 'Z' {
-				letters++
-			}
-		}
-		if letters == 0 {
-			if len(nameParts) > 0 {
-				break
-			}
-			continue
-		}
-		nameParts = append(nameParts, p)
-		// Typical person/merchant: 1–3 tokens then bank code / digits.
-		if len(nameParts) >= 3 {
-			break
-		}
-	}
-	if len(nameParts) == 0 {
-		return ""
-	}
-	return strings.Join(nameParts, " ")
-}
 
 // LooksLikePersonPayee detects person-style UPI names (e.g. "Shubhi J", "Rahul Sharma").
 func LooksLikePersonPayee(description string) bool {

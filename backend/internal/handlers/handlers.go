@@ -35,6 +35,10 @@ func (a *API) Register(r *gin.Engine) {
 	r.GET("/imports", a.ListImports)
 	r.GET("/imports/:id", a.GetImport)
 
+	r.GET("/dashboard", a.YearDashboard)
+	r.GET("/dashboard/health", a.GetYearHealth)
+	r.POST("/dashboard/health", a.GenerateYearHealth)
+
 	r.GET("/months", a.ListMonths)
 	r.GET("/months/calendar", a.MonthCalendar)
 	r.GET("/months/:month/summary", a.MonthSummary)
@@ -159,6 +163,49 @@ func (a *API) GetImport(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"import": imp})
+}
+
+func (a *API) YearDashboard(c *gin.Context) {
+	year, _ := strconv.Atoi(c.DefaultQuery("year", ""))
+	if year == 0 {
+		year = time.Now().UTC().Year()
+	}
+	dash, err := a.MonthHealth.YearDashboard(c.Request.Context(), year)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, dash)
+}
+
+func (a *API) GetYearHealth(c *gin.Context) {
+	year, _ := strconv.Atoi(c.DefaultQuery("year", ""))
+	if year == 0 {
+		year = time.Now().UTC().Year()
+	}
+	rep, err := a.MonthHealth.GetYearHealth(c.Request.Context(), year)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "year health not generated yet", "year": year})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, rep)
+}
+
+func (a *API) GenerateYearHealth(c *gin.Context) {
+	year, _ := strconv.Atoi(c.DefaultQuery("year", ""))
+	if year == 0 {
+		year = time.Now().UTC().Year()
+	}
+	rep, err := a.MonthHealth.GenerateYearHealth(c.Request.Context(), year)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, rep)
 }
 
 func (a *API) ListMonths(c *gin.Context) {

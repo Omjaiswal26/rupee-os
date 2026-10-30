@@ -1,8 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CircleHelp } from "lucide-react";
 import { api, type Transaction } from "@/lib/api";
+import { typeForCategory } from "@/lib/classify";
+import {
+  ATTENTION_ACCENT,
+  ATTENTION_CHIP_STYLE,
+  CategoryIcon,
+  categoryAccent,
+  categoryChipStyle,
+} from "@/components/category-icon";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -29,7 +36,8 @@ export function displayCategory(cat?: string | null): string {
 /** Best-effort payee hint for "apply to all" label (mirrors backend slash parse). */
 function payeeHint(desc: string): string {
   const parts = desc.split(/[/\\|]/).map((p) => p.trim()).filter(Boolean);
-  const noise = /^(WDL|TFR|UPI|IMPS|NEFT|RTGS|DR|CR|PAY|PAYM|PAYMENT|HDFC|YESB|UTIB|ICIC|SBIN|AXIS|AIRP|PAYTM)$/i;
+  const noise =
+    /^(WDL|TFR|DEP|UPI|IMPS|NEFT|RTGS|DR|CR|PAY|PAYM|PAYMENT|HDFC|YESB|UTIB|ICIC|SBIN|AXIS|AIRP|PAYTM)$/i;
   for (const p of parts) {
     if (p.length < 2 || noise.test(p) || /^\d{3,}$/.test(p)) continue;
     if (/^AT\d/i.test(p)) continue;
@@ -39,7 +47,7 @@ function payeeHint(desc: string): string {
   return "";
 }
 
-/** Category cell: plain text, or a small badge that opens a categorize popover. */
+/** Category chip: same shape for all rows; amber help icon only when attention needed. */
 export function CategoryCell({
   txn,
   categories,
@@ -54,11 +62,14 @@ export function CategoryCell({
   const [category, setCategory] = useState(
     txn.category && txn.category !== "Other" ? txn.category : "",
   );
-  const [applyAll, setApplyAll] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState<"one" | "all" | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const hint = useMemo(() => payeeHint(txn.original_description), [txn.original_description]);
+
+  useEffect(() => {
+    setCategory(txn.category && txn.category !== "Other" ? txn.category : "");
+  }, [txn.id, txn.category]);
 
   useEffect(() => {
     if (!open) return;
@@ -76,30 +87,18 @@ export function CategoryCell({
     };
   }, [open]);
 
-  async function save() {
+  async function save(mode: "one" | "all") {
     if (!category) return;
-    setSaving(true);
+    setSaving(mode);
     setErr(null);
     try {
       const res = await api.correct(txn.id, {
         category,
-        create_rule: applyAll,
-        apply_to_matching: applyAll,
-        type:
-          category === "Transfers"
-            ? "transfer"
-            : category === "Investments"
-              ? "investment"
-              : category === "Fees & Charges"
-                ? "fee"
-                : category === "Income"
-                  ? "income"
-                  : txn.direction === "credit"
-                    ? "income"
-                    : "expense",
+        create_rule: mode === "all",
+        apply_to_matching: mode === "all",
+        type: typeForCategory(category, txn.direction),
       });
       setOpen(false);
-      setApplyAll(false);
       onSaved(res.transaction, {
         applied_count: res.applied_count,
         pattern: res.pattern,
@@ -107,37 +106,38 @@ export function CategoryCell({
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Save failed");
     } finally {
-      setSaving(false);
+      setSaving(null);
     }
   }
 
-  if (!ambiguous) {
-    return (
-      <span className="text-muted-foreground">
-        {displayCategory(txn.category)}
-        {txn.subcategory ? <span className="text-xs"> / {txn.subcategory}</span> : null}
-      </span>
-    );
-  }
+  const label = displayCategory(txn.category);
+  const title = ambiguous
+    ? `${statusLabel(txn)} — click to categorize`
+    : `Change category (${label}${txn.subcategory ? ` / ${txn.subcategory}` : ""})`;
+  const tint = ambiguous ? ATTENTION_CHIP_STYLE : categoryChipStyle(txn.category);
+  const accent = ambiguous ? ATTENTION_ACCENT : categoryAccent(txn.category);
 
   return (
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        title={statusLabel(txn) + " — click to categorize"}
+        title={title}
         onClick={() => setOpen((v) => !v)}
+        style={tint}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-md border border-border/80 px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-amber-500/50 hover:text-foreground",
-          open && "border-amber-500/50 text-foreground",
+          "inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-left text-xs transition-opacity hover:opacity-90",
+          open && "ring-1 ring-foreground/20",
         )}
       >
-        <CircleHelp className="h-3.5 w-3.5 text-amber-400/90" strokeWidth={2} />
-        <span>{displayCategory(txn.category)}</span>
+        <CategoryIcon category={txn.category} style={{ color: accent }} />
+        <span className="truncate text-muted-foreground">{label}</span>
       </button>
 
       {open && (
         <div className="absolute left-0 top-full z-30 mt-1.5 w-64 rounded-md border border-border bg-card p-2 shadow-lg">
-          <p className="mb-2 px-1 text-[11px] text-muted-foreground">{statusLabel(txn)}</p>
+          <p className="mb-2 px-1 text-[11px] text-muted-foreground">
+            {ambiguous ? statusLabel(txn) : "Recategorize"}
+          </p>
           <select
             autoFocus
             className="h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs"
@@ -153,21 +153,28 @@ export function CategoryCell({
               </option>
             ))}
           </select>
-          {hint ? (
-            <label className="mt-2 flex cursor-pointer items-start gap-2 px-1 text-[11px] text-muted-foreground">
-              <input
-                type="checkbox"
-                className="mt-0.5"
-                checked={applyAll}
-                onChange={(e) => setApplyAll(e.target.checked)}
-              />
-              <span>
-                Apply to all matching <span className="text-foreground">“{hint}”</span>
-                <span className="block text-[10px] opacity-80">Also saves a rule for future imports</span>
-              </span>
-            </label>
-          ) : null}
-          <div className="mt-2 flex justify-end gap-1.5">
+          <div className="mt-2 flex flex-col gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 w-full text-xs"
+              disabled={!category || saving !== null}
+              onClick={() => save("one")}
+            >
+              {saving === "one" ? "…" : "This only"}
+            </Button>
+            {hint ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-8 w-full text-xs"
+                disabled={!category || saving !== null}
+                onClick={() => save("all")}
+              >
+                {saving === "all" ? "…" : `All “${hint}”`}
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="ghost"
@@ -176,15 +183,6 @@ export function CategoryCell({
               onClick={() => setOpen(false)}
             >
               Cancel
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              disabled={!category || saving}
-              onClick={save}
-            >
-              {saving ? "…" : applyAll ? "Apply all" : "Save"}
             </Button>
           </div>
           {err && <p className="mt-1 px-1 text-[11px] text-red-300">{err}</p>}

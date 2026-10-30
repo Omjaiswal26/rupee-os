@@ -10,8 +10,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CategoryPie } from "@/components/category-pie";
+import {
+  ATTENTION_ACCENT,
+  ATTENTION_CHIP_STYLE,
+  CategoryIcon,
+  categoryAccent,
+  categoryChipStyle,
+} from "@/components/category-icon";
 import { CategoryCell } from "@/components/classify-row";
 import { MonthHealthCard } from "@/components/month-health-card";
+import { MonthUpload } from "@/components/month-upload";
+import { LayoutGrid } from "lucide-react";
+
+const ALL_FILTER_STYLE = {
+  backgroundColor: "rgba(52, 211, 153, 0.14)",
+  borderColor: "rgba(52, 211, 153, 0.55)",
+} as const;
+const ALL_FILTER_ACCENT = "#34d399";
 
 type Chip = { key: string; label: string };
 type SortKey = "date" | "amount" | "description" | "category";
@@ -38,6 +53,7 @@ export default function MonthPage() {
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [wasClassifying, setWasClassifying] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setQDebounced(q), 250);
@@ -193,12 +209,15 @@ export default function MonthPage() {
           >
             Review queue
           </Link>
-          <Link
-            href={`/upload?month=${month}`}
-            className="inline-flex h-9 items-center rounded-md border border-border px-4 text-sm hover:bg-accent"
-          >
-            Re-upload
-          </Link>
+          {(summary?.transaction_count || 0) > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowUpload((v) => !v)}
+            >
+              {showUpload ? "Hide upload" : "Re-upload"}
+            </Button>
+          )}
           <Button
             variant="secondary"
             disabled={
@@ -229,19 +248,19 @@ export default function MonthPage() {
       )}
 
       {(summary?.transaction_count || 0) === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-start gap-3 p-8">
-            <p className="text-sm text-muted-foreground">No statement for this month yet.</p>
-            <Link
-              href={`/upload?month=${month}`}
-              className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
-            >
-              Upload statement
-            </Link>
-          </CardContent>
-        </Card>
+        <MonthUpload month={month} onDone={() => load()} />
       ) : (
         <>
+          {showUpload && (
+            <MonthUpload
+              month={month}
+              replacing
+              onDone={() => {
+                setShowUpload(false);
+                load();
+              }}
+            />
+          )}
           <div className="grid gap-3 sm:grid-cols-3">
             <Stat label="Income" value={formatINR(summary?.income_paise || 0)} />
             <Stat label="Expenses" value={formatINR(summary?.expense_paise || 0)} />
@@ -287,18 +306,48 @@ export default function MonthPage() {
               <div className="flex flex-wrap gap-1.5">
                 {chips.map((f) => {
                   const active = chip === f.key;
+                  const isOther = f.key === "Other";
+                  const tint = active
+                    ? !f.key
+                      ? ALL_FILTER_STYLE
+                      : isOther
+                        ? ATTENTION_CHIP_STYLE
+                        : categoryChipStyle(f.key)
+                    : undefined;
+                  const accent = !f.key
+                    ? ALL_FILTER_ACCENT
+                    : isOther
+                      ? ATTENTION_ACCENT
+                      : categoryAccent(f.key);
                   return (
                     <button
                       key={f.key || "all"}
                       type="button"
                       onClick={() => setChip(f.key)}
-                      className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+                      style={tint}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-opacity",
                         active
-                          ? "bg-primary text-primary-foreground"
-                          : "border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
-                      }`}
+                          ? "hover:opacity-90"
+                          : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
+                      )}
                     >
-                      {f.label}
+                      {f.key ? (
+                        <CategoryIcon
+                          category={f.key}
+                          style={active ? { color: accent } : undefined}
+                          className={active ? undefined : "opacity-80"}
+                        />
+                      ) : (
+                        <LayoutGrid
+                          className={cn("h-3.5 w-3.5 shrink-0", !active && "opacity-80")}
+                          strokeWidth={2}
+                          style={active ? { color: accent } : undefined}
+                        />
+                      )}
+                      <span className={active ? "text-muted-foreground" : undefined}>
+                        {f.label}
+                      </span>
                     </button>
                   );
                 })}

@@ -84,6 +84,42 @@ export type YearCalendar = {
   months: MonthStatusInfo[];
 };
 
+export type YearHealth = {
+  year: number;
+  score: number;
+  verdict: string;
+  tip: string;
+  signals: MonthHealth["signals"];
+  model_name: string;
+  generated_at: string;
+};
+
+export type DashboardMonthBar = {
+  month: string;
+  label: string;
+  has_statement: boolean;
+  status: MonthStatus;
+  transaction_count: number;
+  income_paise: number;
+  expense_paise: number;
+  uncategorized_paise: number;
+  needs_review_count: number;
+  score?: number | null;
+  verdict?: string;
+};
+
+export type YearDashboard = {
+  year: number;
+  years: number[];
+  income_paise: number;
+  expense_paise: number;
+  uncategorized_paise: number;
+  months_with_data: number;
+  needs_review_months: number;
+  months: DashboardMonthBar[];
+  health: YearHealth | null;
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
@@ -100,6 +136,10 @@ export const api = {
   months: () => request<{ months: string[] }>("/months"),
   calendar: (year: number) =>
     request<YearCalendar>(`/months/calendar?year=${year}`),
+  dashboard: (year: number) =>
+    request<YearDashboard>(`/dashboard?year=${year}`),
+  generateYearHealth: (year: number) =>
+    request<YearHealth>(`/dashboard/health?year=${year}`, { method: "POST" }),
   summary: (month: string) => request<MonthSummary>(`/months/${month}/summary`),
   health: (month: string) => request<MonthHealth>(`/months/${month}/health`),
   generateHealth: (month: string) =>

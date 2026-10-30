@@ -21,3 +21,22 @@ export function formatMonthLabel(yyyyMm: string): string {
     year: "numeric",
   });
 }
+
+/** Ratio 0–1 → percent label; clamps wild values. */
+export function formatPercent(ratio: number, digits = 0): string {
+  if (!Number.isFinite(ratio)) return "—";
+  const pct = ratio * 100;
+  if (Math.abs(pct) > 999) return pct < 0 ? "< −999%" : "> 999%";
+  return `${pct.toFixed(digits)}%`;
+}
+
+/**
+ * Savings rate is (income − expense) / income.
+ * Meaningless when recognized income is ~0 (shows absurd negatives).
+ */
+export function formatSavingsRate(rate: number, incomePaise = 0): string {
+  if (!Number.isFinite(rate)) return "—";
+  if (incomePaise > 0 && incomePaise < 10_000) return "—"; // < ₹100 income
+  if (incomePaise <= 0 && rate <= 0) return "—";
+  return formatPercent(rate);
+}

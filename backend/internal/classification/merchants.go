@@ -28,6 +28,8 @@ var MerchantKeywords = []MerchantKeyword{
 	{Needle: "coin by zerodha", Category: "Investments", Subcategory: "Mutual Fund", Type: "investment"},
 	{Needle: "cdsl", Category: "Investments", Subcategory: "Demat", Type: "investment"},
 	{Needle: "mutual f", Category: "Investments", Subcategory: "Mutual Fund", Type: "investment"},
+	{Needle: "ppfas", Category: "Investments", Subcategory: "Mutual Fund", Type: "investment"},
+	{Needle: "gr0ww", Category: "Investments", Subcategory: "Broker", Type: "investment"},
 
 	// Food
 	{Needle: "swiggy", Category: "Food & Dining", Subcategory: "Delivery", Type: "expense"},

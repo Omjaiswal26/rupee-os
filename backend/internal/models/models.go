@@ -129,3 +129,18 @@ type MonthHealthReport struct {
 }
 
 func (MonthHealthReport) TableName() string { return "month_health_reports" }
+
+// YearHealthReport stores a year-scoped financial health score + AI tip.
+type YearHealthReport struct {
+	Year        int            `gorm:"primaryKey" json:"year"`
+	Score       int            `gorm:"not null" json:"score"`
+	Verdict     string         `gorm:"not null" json:"verdict"`
+	Tip         string         `gorm:"not null;default:''" json:"tip"`
+	Signals     datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'" json:"signals"`
+	ModelName   string         `gorm:"not null;default:''" json:"model_name"`
+	GeneratedAt time.Time      `gorm:"not null" json:"generated_at"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+}
+
+func (YearHealthReport) TableName() string { return "year_health_reports" }

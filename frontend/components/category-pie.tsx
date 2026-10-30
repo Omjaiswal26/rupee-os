@@ -1,19 +1,7 @@
 "use client";
 
 import { formatINR, cn } from "@/lib/utils";
-
-const COLORS = [
-  "#34d399",
-  "#60a5fa",
-  "#fbbf24",
-  "#f472b6",
-  "#a78bfa",
-  "#2dd4bf",
-  "#fb923c",
-  "#94a3b8",
-  "#e879f9",
-  "#4ade80",
-];
+import { categoryColor } from "@/components/category-icon";
 
 type Slice = { category: string; amount_paise: number };
 
@@ -68,7 +56,7 @@ export function CategoryPie({
   }
 
   let angle = 0;
-  const arcs = slices.map((d, i) => {
+  const arcs = slices.map((d) => {
     const frac = d.amount_paise / total;
     // Leave a hairline gap except for full circle single slice.
     const sweep = Math.min(359.999, frac * 360);
@@ -77,7 +65,7 @@ export function CategoryPie({
     angle = end;
     return {
       ...d,
-      color: COLORS[i % COLORS.length],
+      color: categoryColor(d.category),
       start,
       end,
       pct: Math.round(frac * 1000) / 10,
