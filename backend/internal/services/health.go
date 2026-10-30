@@ -69,16 +69,21 @@ func (s *HealthService) Generate(ctx context.Context, monthKey string) (*MonthHe
 	if err != nil {
 		return nil, err
 	}
-	scored := classification.ScoreHealth(signals)
+	scored := classification.EnrichHealth(&signals)
 
-	tip := classification.FallbackTip(signals, scored)
+	tip := signals.Headline
 	modelName := "deterministic"
-	if s.Client != nil && s.Client.Model != "" {
+	// Skip LLM when data quality is too poor — UI already shows the reliability callout.
+	if signals.Reliable && s.Client != nil && s.Client.Model != "" {
 		modelName = s.Client.Model
-		if t, err := s.Client.GenerateTip(ctx, monthKey, signals, scored); err != nil {
-			s.Log.Warn("health tip generation failed; using fallback", "month", monthKey, "err", err)
+		if h, focus, err := s.Client.GenerateHeadline(ctx, monthKey, signals, scored); err != nil {
+			s.Log.Warn("health headline failed; using fallback", "month", monthKey, "err", err)
 		} else {
-			tip = t
+			tip = h
+			signals.Headline = h
+			if focus != "" {
+				signals.FocusCategory = focus
+			}
 		}
 	}
 

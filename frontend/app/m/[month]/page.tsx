@@ -275,6 +275,10 @@ export default function MonthPage() {
             month={month}
             classifying={Boolean(summary?.classifying)}
             enabled={(summary?.transaction_count || 0) > 0}
+            onFocusCategory={(cat) => {
+              // Chip keys use backend category ("Other"), not the display label.
+              setChip(cat === "Uncategorized" || cat === "Other" ? "Other" : cat);
+            }}
           />
 
           {summary && (

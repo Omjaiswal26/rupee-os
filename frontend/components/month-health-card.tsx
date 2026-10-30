@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, type MonthHealth } from "@/lib/api";
+import Link from "next/link";
+import { api, type HealthInsight, type MonthHealth } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { cn, formatPercent, formatSavingsRate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 function toneForVerdict(verdict: string): "good" | "ok" | "warn" | "bad" {
   switch (verdict) {
@@ -18,21 +19,42 @@ function toneForVerdict(verdict: string): "good" | "ok" | "warn" | "bad" {
   }
 }
 
-function Signal({
-  label,
-  value,
-  hint,
+function valueTone(tone: string): string {
+  switch (tone) {
+    case "good":
+      return "text-emerald-400";
+    case "warn":
+      return "text-amber-400";
+    case "bad":
+      return "text-red-400";
+    default:
+      return "text-foreground";
+  }
+}
+
+function Metric({
+  insight,
+  onClick,
 }: {
-  label: string;
-  value: string;
-  hint: string;
+  insight: HealthInsight;
+  onClick?: () => void;
 }) {
+  const interactive = Boolean(onClick);
+  const Comp = interactive ? "button" : "div";
   return (
-    <div className="rounded-md border border-border/70 bg-background/40 px-3 py-2">
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
-      <p className="mt-0.5 text-sm font-medium tabular-nums text-foreground">{value}</p>
-      <p className="text-[10px] text-muted-foreground">{hint}</p>
-    </div>
+    <Comp
+      type={interactive ? "button" : undefined}
+      onClick={onClick}
+      className={cn(
+        "min-w-0 flex-1 rounded-md px-3 py-2.5 text-left",
+        interactive && "transition-colors hover:bg-accent/50",
+      )}
+    >
+      <p className="truncate text-[11px] text-muted-foreground">{insight.label}</p>
+      <p className={cn("mt-1 text-lg font-semibold tabular-nums tracking-tight", valueTone(insight.tone))}>
+        {insight.value}
+      </p>
+    </Comp>
   );
 }
 
@@ -40,10 +62,12 @@ export function MonthHealthCard({
   month,
   classifying,
   enabled,
+  onFocusCategory,
 }: {
   month: string;
   classifying: boolean;
   enabled: boolean;
+  onFocusCategory?: (category: string) => void;
 }) {
   const [report, setReport] = useState<MonthHealth | null>(null);
   const [loading, setLoading] = useState(false);
@@ -88,7 +112,7 @@ export function MonthHealthCard({
   if (classifying) {
     return (
       <div className="rounded-lg border border-border bg-card/40 px-5 py-4 text-sm text-muted-foreground">
-        Month health will appear when classification finishes.
+        Month health appears when classification finishes.
       </div>
     );
   }
@@ -96,24 +120,22 @@ export function MonthHealthCard({
   if (loading && !report) {
     return (
       <div className="rounded-lg border border-border bg-card/40 px-5 py-6 text-sm text-muted-foreground">
-        Generating month health…
+        Generating…
       </div>
     );
   }
 
   if (error && !report) {
     return (
-      <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-5 py-4 text-sm">
-        <p className="text-red-300">{error}</p>
-        <Button
+      <div className="rounded-lg border border-border bg-card/40 px-5 py-4 text-sm">
+        <p className="text-muted-foreground">{error}</p>
+        <button
           type="button"
-          variant="secondary"
-          size="sm"
-          className="mt-3"
+          className="mt-3 text-xs text-foreground underline-offset-2 hover:underline"
           onClick={() => loadOrGenerate(true)}
         >
           Retry
-        </Button>
+        </button>
       </div>
     );
   }
@@ -122,6 +144,40 @@ export function MonthHealthCard({
 
   const tone = toneForVerdict(report.verdict);
   const s = report.signals;
+  const reliable = s.reliable !== false && !s.unreliable_reason;
+  const insights: HealthInsight[] = (s.insights?.length
+    ? s.insights
+    : [
+        {
+          id: "uncategorized",
+          label: "Uncategorized",
+          value: `${Math.round((s.uncategorized_ratio || 0) * 100)}%`,
+          tone: (s.uncategorized_ratio || 0) >= 0.2 ? "bad" : "ok",
+        },
+        {
+          id: "savings",
+          label: "Savings",
+          value:
+            s.income_paise >= 10_000
+              ? `${Math.round((s.savings_rate || 0) * 100)}%`
+              : "—",
+          tone: "ok",
+        },
+        {
+          id: "invest",
+          label: "Invested",
+          value: `${Math.round((s.invest_share || 0) * 100)}%`,
+          tone: (s.invest_share || 0) >= 0.15 ? "good" : "ok",
+        },
+      ]
+  ).slice(0, 4);
+
+  const drivers = s.drivers || [];
+  const rawHeadline = (s.headline || report.tip || "").trim();
+  // Reliable only: short headline. Unreliable: banner owns the message.
+  const headline =
+    reliable && rawHeadline && rawHeadline.split(/\s+/).length <= 14 ? rawHeadline : "";
+
   const barColor =
     tone === "good"
       ? "bg-emerald-400"
@@ -131,83 +187,127 @@ export function MonthHealthCard({
           ? "bg-amber-400"
           : "bg-red-400";
 
+  const verdictColor =
+    tone === "good"
+      ? "text-emerald-400"
+      : tone === "ok"
+        ? "text-sky-400"
+        : tone === "warn"
+          ? "text-amber-400"
+          : "text-red-400";
+
   return (
-    <div className="rounded-lg border border-border bg-card/40 p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+    <section className="rounded-lg border border-border bg-card/40 px-5 py-5">
+      {/* Header: title + score */}
+      <div className="flex items-end justify-between gap-4">
+        <div className="min-w-0">
           <h2 className="text-sm font-medium text-foreground">Month health</h2>
-          <p
-            className={cn(
-              "mt-1 text-xs font-medium",
-              tone === "good" && "text-emerald-300",
-              tone === "ok" && "text-sky-300",
-              tone === "warn" && "text-amber-200",
-              tone === "bad" && "text-red-300",
-            )}
-          >
+          <p className={cn("mt-0.5 text-xs", verdictColor)}>
             {report.verdict}
+            {!reliable && (
+              <span className="text-muted-foreground"> · provisional</span>
+            )}
           </p>
         </div>
-        <div className="text-right">
-          <p className="text-3xl font-semibold tabular-nums tracking-tight">{report.score}</p>
-          <p className="text-[10px] text-muted-foreground">Score</p>
-        </div>
+        <p
+          className={cn(
+            "text-4xl font-semibold tabular-nums leading-none tracking-tight text-foreground",
+            !reliable && "text-foreground/50",
+          )}
+        >
+          {report.score}
+        </p>
       </div>
 
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-secondary">
+      <div className="mt-4 h-1 overflow-hidden rounded-full bg-secondary">
         <div
           className={cn("h-full rounded-full transition-[width] duration-500", barColor)}
-          style={{ width: `${report.score}%` }}
+          style={{ width: `${Math.max(2, report.score)}%` }}
         />
       </div>
 
-      <p className="mt-4 text-sm leading-relaxed text-foreground/90">{report.tip}</p>
+      {/* Reliability: one quiet line + two actions — no filled alert box */}
+      {!reliable && (
+        <div className="mt-5 flex flex-col gap-2 border-l-2 border-amber-500/70 pl-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <p className="text-sm text-foreground/90">
+            Too much uncategorized — categorize, then regenerate.
+          </p>
+          <div className="flex shrink-0 items-center gap-3 text-xs">
+            <button
+              type="button"
+              onClick={() => onFocusCategory?.("Other")}
+              className="font-medium text-foreground underline-offset-2 hover:underline"
+            >
+              Show uncategorized
+            </button>
+            <Link
+              href={`/review?month=${month}`}
+              className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              Review
+            </Link>
+          </div>
+        </div>
+      )}
 
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        <Signal
-          label="Savings"
-          value={formatSavingsRate(s.savings_rate, s.income_paise)}
-          hint={
-            s.income_paise < 10_000
-              ? "low income"
-              : s.savings_rate >= 0.1
-                ? "ok"
-                : "watch"
-          }
-        />
-        <Signal
-          label="Invested"
-          value={formatPercent(s.invest_share)}
-          hint={s.invest_share >= 0.15 ? "strong" : "low"}
-        />
-        <Signal
-          label="Uncategorized"
-          value={formatPercent(s.uncategorized_ratio)}
-          hint={s.uncategorized_ratio >= 0.15 ? "watch" : "ok"}
-        />
+      {headline ? (
+        <p className="mt-5 text-sm text-foreground/90">{headline}</p>
+      ) : null}
+
+      {/* Metrics: equal columns, color on value only */}
+      <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-4">
+        {insights.map((ins) => (
+          <div key={ins.id + ins.label} className="bg-card/80">
+            <Metric
+              insight={ins}
+              onClick={
+                onFocusCategory && (ins.id === "uncategorized" || ins.id === "top_category")
+                  ? () =>
+                      onFocusCategory(ins.id === "uncategorized" ? "Other" : ins.label)
+                  : undefined
+              }
+            />
+          </div>
+        ))}
       </div>
-      {(s.needs_review_count || 0) > 0 && (
-        <p className="mt-3 text-xs text-amber-200/80">
-          {s.needs_review_count} need review
+
+      {drivers.length > 0 && (
+        <p className="mt-3 text-[11px] tabular-nums text-muted-foreground">
+          {drivers.map((d, i) => (
+            <span key={d.label}>
+              {i > 0 ? <span className="mx-1.5 text-border">·</span> : null}
+              <span className={d.delta >= 0 ? "text-emerald-400/80" : "text-red-400/80"}>
+                {d.delta >= 0 ? `+${d.delta}` : d.delta}
+              </span>{" "}
+              {d.label}
+            </span>
+          ))}
         </p>
       )}
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
-        <span>
-          Stored · {report.model_name || "local"} ·{" "}
-          {report.generated_at ? new Date(report.generated_at).toLocaleString() : "—"}
+      <div className="mt-5 flex items-center justify-between gap-3 border-t border-border/80 pt-3 text-[11px] text-muted-foreground">
+        <span className="truncate">
+          {report.model_name || "local"}
+          {report.generated_at
+            ? ` · ${new Date(report.generated_at).toLocaleString("en-IN", {
+                day: "numeric",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}`
+            : ""}
         </span>
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          className="h-7 px-2 text-xs"
+          className="h-7 shrink-0 px-2 text-xs"
           disabled={loading}
           onClick={() => loadOrGenerate(true)}
         >
           {loading ? "…" : "Regenerate"}
         </Button>
       </div>
-    </div>
+    </section>
   );
 }

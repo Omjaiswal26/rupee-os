@@ -174,12 +174,13 @@ func (s *TransactionService) List(ctx context.Context, f TransactionFilter) ([]m
 		// no status filter
 	case "attention":
 		// Ambiguous / incomplete: pending, needs review, or Other/uncategorized.
-		q = q.Where(`
+		// Parens required so OR does not bypass month/date filters (AND binds tighter).
+		q = q.Where(`(
 			classification_status IN (?, ?)
 			OR category = ?
 			OR category IS NULL
 			OR category = ''
-		`, models.ClassificationPending, models.ClassificationNeedsReview, "Other")
+		)`, models.ClassificationPending, models.ClassificationNeedsReview, "Other")
 	default:
 		q = q.Where("classification_status = ?", f.Status)
 	}

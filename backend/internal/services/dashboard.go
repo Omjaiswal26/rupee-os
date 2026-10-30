@@ -169,16 +169,20 @@ func (s *HealthService) GenerateYearHealth(ctx context.Context, year int) (*Year
 	if err != nil {
 		return nil, err
 	}
-	scored := classification.ScoreHealth(signals)
+	scored := classification.EnrichHealth(&signals)
 
-	tip := classification.FallbackTip(signals, scored)
+	tip := signals.Headline
 	modelName := "deterministic"
 	if s.Client != nil && s.Client.Model != "" {
 		modelName = s.Client.Model
-		if t, err := s.Client.GenerateTip(ctx, fmt.Sprintf("%d", year), signals, scored); err != nil {
-			s.Log.Warn("year health tip failed; using fallback", "year", year, "err", err)
+		if h, focus, err := s.Client.GenerateHeadline(ctx, fmt.Sprintf("%d", year), signals, scored); err != nil {
+			s.Log.Warn("year health headline failed; using fallback", "year", year, "err", err)
 		} else {
-			tip = t
+			tip = h
+			signals.Headline = h
+			if focus != "" {
+				signals.FocusCategory = focus
+			}
 		}
 	}
 

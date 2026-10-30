@@ -42,6 +42,18 @@ export type MonthSummary = {
   category_breakdown: { category: string; amount_paise: number }[];
 };
 
+export type HealthInsight = {
+  id: string;
+  label: string;
+  value: string;
+  tone: string;
+};
+
+export type HealthDriver = {
+  label: string;
+  delta: number;
+};
+
 export type MonthHealth = {
   month: string;
   score: number;
@@ -59,6 +71,12 @@ export type MonthHealth = {
     invest_share: number;
     uncategorized_ratio: number;
     top_categories: { category: string; amount_paise: number; share: number }[];
+    reliable?: boolean;
+    unreliable_reason?: string;
+    insights?: HealthInsight[];
+    drivers?: HealthDriver[];
+    headline?: string;
+    focus_category?: string;
   };
   model_name: string;
   generated_at: string;
