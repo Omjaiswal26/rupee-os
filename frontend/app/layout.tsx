@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Sidebar } from "@/components/sidebar";
+import { OllamaStatusBanner } from "@/components/ollama-status-banner";
 import "./globals.css";
 
 const geist = Geist({
@@ -24,7 +25,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${geist.variable} ${geistMono.variable} font-sans`}>
         <div className="flex min-h-svh">
           <Sidebar />
-          <main className="min-w-0 flex-1 p-5 md:p-6 lg:p-8 xl:p-10">{children}</main>
+          <div className="flex min-w-0 flex-1 flex-col">
+            <OllamaStatusBanner />
+            <main className="min-w-0 flex-1 p-5 md:p-6 lg:p-8 xl:p-10">{children}</main>
+          </div>
         </div>
       </body>
     </html>

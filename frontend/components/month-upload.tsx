@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { FileDropzone } from "@/components/file-dropzone";
 
 /** Upload / replace statement for a specific calendar month only. */
 export function MonthUpload({
@@ -74,35 +75,33 @@ export function MonthUpload({
         <p className="text-xs text-muted-foreground">
           One calendar month of bank XLSX/CSV. Password-protected XLSX supported — password is
           never stored.
-          {replacing
-            ? " Existing transactions for this month will be removed first."
-            : ""}
+          {replacing ? " Existing transactions for this month will be removed first." : ""}
         </p>
       </CardHeader>
       <CardContent>
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <Input
-            type="file"
-            accept=".csv,.xlsx,.xls"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-          />
+          <FileDropzone file={file} onFile={setFile} disabled={busy} />
+
           <div className="space-y-1.5">
             <label className="text-xs text-muted-foreground" htmlFor={`pw-${month}`}>
-              XLSX password (if protected)
+              XLSX password <span className="text-muted-foreground/70">(only if protected)</span>
             </label>
             <Input
               id={`pw-${month}`}
               type="password"
               autoComplete="off"
-              placeholder="Statement password"
+              placeholder="Leave blank for CSV or unlocked XLSX"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              disabled={busy}
             />
           </div>
-          <Button type="submit" disabled={!file || busy}>
+
+          <Button type="submit" disabled={!file || busy} className="w-full sm:w-auto">
             {busy ? "Uploading…" : replacing ? "Replace & process" : "Upload & process"}
           </Button>
         </form>
+
         {error && (
           <p className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-red-300">
             {error}
@@ -119,9 +118,7 @@ export function MonthUpload({
               <span className="text-muted-foreground">Status</span>
               <Badge>{current.status}</Badge>
             </div>
-            {current.error_message && (
-              <p className="text-red-300">{current.error_message}</p>
-            )}
+            {current.error_message && <p className="text-red-300">{current.error_message}</p>}
             {current.status === "completed" && current.validated_month && (
               <Link
                 href={`/m/${current.validated_month.slice(0, 7)}`}

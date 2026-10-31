@@ -86,8 +86,16 @@ export function MonthHealthCard({
             setLoading(false);
             return;
           } catch {
-            // not generated yet
+            // not generated yet — need health model
           }
+        }
+        const ollama = await api.ollamaStatus().catch(() => null);
+        if (ollama && !ollama.health_present) {
+          setError(
+            `Health model “${ollama.health_model || "?"}” not pulled. Run: ./scripts/pull-ollama-model.sh`,
+          );
+          setLoading(false);
+          return;
         }
         const generated = await api.generateHealth(month);
         setReport(generated);
@@ -126,12 +134,22 @@ export function MonthHealthCard({
   }
 
   if (error && !report) {
+    const needsPull = /not pulled|health model|HEALTH_MODEL|pull-ollama/i.test(error);
     return (
-      <div className="rounded-lg border border-border bg-card/40 px-5 py-4 text-sm">
-        <p className="text-muted-foreground">{error}</p>
+      <div className="rounded-lg border border-border bg-card/40 px-5 py-5">
+        <h2 className="text-sm font-medium text-foreground">Month health</h2>
+        <p className="mt-2 text-sm text-muted-foreground">{error}</p>
+        {needsPull ? (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Health reports are fully model-based. Pull weights, then retry:
+            <code className="mt-1.5 block rounded-md bg-muted/40 px-2 py-1.5 text-[11px] text-foreground">
+              ./scripts/pull-ollama-model.sh
+            </code>
+          </p>
+        ) : null}
         <button
           type="button"
-          className="mt-3 text-xs text-foreground underline-offset-2 hover:underline"
+          className="mt-4 text-xs font-medium text-foreground underline-offset-2 hover:underline"
           onClick={() => loadOrGenerate(true)}
         >
           Retry

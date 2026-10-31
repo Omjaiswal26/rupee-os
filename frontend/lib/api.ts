@@ -54,6 +54,17 @@ export type HealthDriver = {
   delta: number;
 };
 
+export type OllamaStatus = {
+  ok: boolean;
+  reachable: boolean;
+  classify_model: string;
+  classify_present: boolean;
+  health_model: string;
+  health_present: boolean;
+  hint?: string;
+  error?: string;
+};
+
 export type MonthHealth = {
   month: string;
   score: number;
@@ -134,6 +145,9 @@ export type YearDashboard = {
   uncategorized_paise: number;
   months_with_data: number;
   needs_review_months: number;
+  /** Live SQL count — not from stored AI health. */
+  needs_review_count: number;
+  pending_count: number;
   months: DashboardMonthBar[];
   health: YearHealth | null;
 };
@@ -209,6 +223,7 @@ export const api = {
   importOne: (id: string) => request<{ import: ImportRecord }>(`/imports/${id}`),
   categories: () =>
     request<{ categories: string[]; types: string[] }>("/meta/categories"),
+  ollamaStatus: () => request<OllamaStatus>("/meta/ollama"),
   upload: async (file: File, password = "", replaceMonth = "") => {
     const body = new FormData();
     body.append("file", file);

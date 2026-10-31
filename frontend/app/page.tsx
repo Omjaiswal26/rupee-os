@@ -143,11 +143,13 @@ export default function HomePage() {
             onRegenerate={() => ensureHealth(true)}
           />
 
-          {(dash.needs_review_months > 0 || (health?.signals.needs_review_count || 0) > 0) && (
+          {(dash.needs_review_months > 0 ||
+            (dash.needs_review_count || 0) > 0 ||
+            (dash.pending_count || 0) > 0) && (
             <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/90">
               {dash.needs_review_months} month(s) still have items to review
-              {(health?.signals.needs_review_count || 0) > 0 &&
-                ` · ${health!.signals.needs_review_count} flagged`}
+              {(dash.needs_review_count || 0) > 0 && ` · ${dash.needs_review_count} flagged`}
+              {(dash.pending_count || 0) > 0 && ` · ${dash.pending_count} pending`}
               {" · "}
               <Link href="/review" className="underline underline-offset-2">
                 Open review queue
