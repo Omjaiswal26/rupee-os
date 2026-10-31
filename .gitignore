@@ -32,4 +32,3 @@ frontend/next-env.d.ts
 
 # Docker
 *.log
-docs/CHALLENGES.md

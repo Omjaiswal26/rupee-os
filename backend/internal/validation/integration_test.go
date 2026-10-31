@@ -18,7 +18,7 @@ func TestValidateParsedSingleMonthCSV(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.Month.Format("2006-01") != "2024-03" {
+	if out.Month.Format("2006-01") != "2026-10" {
 		t.Fatalf("month %v", out.Month)
 	}
 }

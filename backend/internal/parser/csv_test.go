@@ -12,7 +12,7 @@ func TestCSVParseSingleMonth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Transactions) != 4 {
+	if len(res.Transactions) != 15 {
 		t.Fatalf("got %d txns", len(res.Transactions))
 	}
 	month := res.Transactions[0].Date.Month()
@@ -20,11 +20,11 @@ func TestCSVParseSingleMonth(t *testing.T) {
 		if txn.Date.Month() != month {
 			t.Fatalf("expected single month, got %v and %v", month, txn.Date.Month())
 		}
-		if txn.Date.Year() != 2024 {
+		if txn.Date.Year() != 2026 {
 			t.Fatalf("year %d", txn.Date.Year())
 		}
 	}
-	// Boundary: March 1 and March 28 same month.
+	// Boundary: Oct 1 … same month.
 	if res.Transactions[0].Date.Day() != 1 {
 		t.Fatalf("first day %d", res.Transactions[0].Date.Day())
 	}
