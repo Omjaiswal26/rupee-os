@@ -16,6 +16,20 @@ type MerchantKeyword struct {
 // MerchantKeywords covers high-signal UPI/bank narration brands.
 // Order: longer / more specific needles first where overlap matters.
 var MerchantKeywords = []MerchantKeyword{
+	// Synthetic demo brands (testdata / screenshots — clearly fictional)
+	{Needle: "demoeats", Category: "Food & Dining", Subcategory: "Delivery", Type: "expense"},
+	{Needle: "fakebite", Category: "Food & Dining", Subcategory: "Delivery", Type: "expense"},
+	{Needle: "democab", Category: "Transport", Subcategory: "Ride", Type: "expense"},
+	{Needle: "samplemart", Category: "Groceries", Subcategory: "Supermarket", Type: "expense"},
+	{Needle: "fakestream", Category: "Entertainment", Subcategory: "Streaming", Type: "expense"},
+	{Needle: "samplemusic", Category: "Entertainment", Subcategory: "Streaming", Type: "expense"},
+	{Needle: "testrail", Category: "Transport", Subcategory: "Rail", Type: "expense"},
+	{Needle: "testbroker", Category: "Investments", Subcategory: "Broker", Type: "investment"},
+	{Needle: "testmutual", Category: "Investments", Subcategory: "Mutual Fund", Type: "investment"},
+	{Needle: "demoshop", Category: "Shopping", Subcategory: "Online", Type: "expense"},
+	{Needle: "fakepower", Category: "Bills & Utilities", Subcategory: "Electricity", Type: "expense"},
+	{Needle: "democorp", Category: "Income", Subcategory: "Salary", Type: "income"},
+
 	// Investments
 	{Needle: "safe gold", Category: "Investments", Subcategory: "Gold", Type: "investment"},
 	{Needle: "safegold", Category: "Investments", Subcategory: "Gold", Type: "investment"},
