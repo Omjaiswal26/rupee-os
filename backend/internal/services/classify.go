@@ -2,13 +2,16 @@ package services
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"github.com/rupee-os/rupee-os/internal/classification"
+	"github.com/rupee-os/rupee-os/internal/jobs"
 	"github.com/rupee-os/rupee-os/internal/models"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
@@ -17,6 +20,7 @@ import (
 type ClassifyService struct {
 	DB          *gorm.DB
 	Client      *classification.Client
+	Asynq       *asynq.Client
 	Log         *slog.Logger
 	Concurrency int // parallel Ollama classify calls; default 2
 }
@@ -38,6 +42,7 @@ func (s *ClassifyService) ClassifyImport(ctx context.Context, importID uuid.UUID
 	}
 	if len(txns) == 0 {
 		s.Log.Info("no pending transactions to classify", "import_id", importID)
+		s.enqueueHealthIfMonthReady(ctx, importID)
 		return nil
 	}
 
@@ -82,7 +87,62 @@ func (s *ClassifyService) ClassifyImport(ctx context.Context, importID uuid.UUID
 		"total", len(txns),
 		"concurrency", limit,
 	)
+	s.enqueueHealthIfMonthReady(ctx, importID)
 	return nil
+}
+
+// enqueueHealthIfMonthReady queues month (+ later year) health when the calendar month has no pending txns.
+func (s *ClassifyService) enqueueHealthIfMonthReady(ctx context.Context, importID uuid.UUID) {
+	if s.Asynq == nil {
+		return
+	}
+	var imp models.Import
+	if err := s.DB.WithContext(ctx).First(&imp, "id = ?", importID).Error; err != nil {
+		s.Log.Warn("health enqueue: load import failed", "import_id", importID, "err", err)
+		return
+	}
+	if imp.ValidatedMonth == nil {
+		return
+	}
+	vm := imp.ValidatedMonth.UTC()
+	start := time.Date(vm.Year(), vm.Month(), 1, 0, 0, 0, 0, time.UTC)
+	end := start.AddDate(0, 1, 0)
+	monthKey := start.Format("2006-01")
+
+	var pending int64
+	if err := s.DB.WithContext(ctx).Model(&models.Transaction{}).
+		Where("transaction_date >= ? AND transaction_date < ? AND classification_status = ?",
+			start, end, models.ClassificationPending).
+		Count(&pending).Error; err != nil {
+		s.Log.Warn("health enqueue: pending count failed", "month", monthKey, "err", err)
+		return
+	}
+	if pending > 0 {
+		s.Log.Info("health enqueue skipped; month still classifying", "month", monthKey, "pending", pending)
+		return
+	}
+
+	task, err := jobs.NewHealthMonthTask(monthKey)
+	if err != nil {
+		s.Log.Warn("health enqueue: build task failed", "month", monthKey, "err", err)
+		return
+	}
+	_, err = s.Asynq.EnqueueContext(ctx, task,
+		asynq.Queue("health"),
+		asynq.TaskID("health:month:"+monthKey),
+		asynq.MaxRetry(3),
+		asynq.Timeout(15*time.Minute),
+		asynq.ProcessIn(2*time.Second),
+	)
+	if err != nil {
+		if errors.Is(err, asynq.ErrTaskIDConflict) {
+			s.Log.Info("health month already queued", "month", monthKey)
+			return
+		}
+		s.Log.Warn("health enqueue failed", "month", monthKey, "err", err)
+		return
+	}
+	s.Log.Info("health month queued", "month", monthKey)
 }
 
 func (s *ClassifyService) loadRules(ctx context.Context) ([]models.UserRule, error) {

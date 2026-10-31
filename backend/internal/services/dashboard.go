@@ -13,17 +13,17 @@ import (
 )
 
 type DashboardMonthBar struct {
-	Month            string `json:"month"`
-	Label            string `json:"label"`
-	HasStatement     bool   `json:"has_statement"`
-	Status           string `json:"status"`
-	TransactionCount int64  `json:"transaction_count"`
-	IncomePaise      int64  `json:"income_paise"`
-	ExpensePaise     int64  `json:"expense_paise"`
-	UncategorizedPaise int64 `json:"uncategorized_paise"`
-	NeedsReviewCount int64  `json:"needs_review_count"`
-	Score            *int   `json:"score,omitempty"`
-	Verdict          string `json:"verdict,omitempty"`
+	Month              string `json:"month"`
+	Label              string `json:"label"`
+	HasStatement       bool   `json:"has_statement"`
+	Status             string `json:"status"`
+	TransactionCount   int64  `json:"transaction_count"`
+	IncomePaise        int64  `json:"income_paise"`
+	ExpensePaise       int64  `json:"expense_paise"`
+	UncategorizedPaise int64  `json:"uncategorized_paise"`
+	NeedsReviewCount   int64  `json:"needs_review_count"`
+	Score              *int   `json:"score,omitempty"`
+	Verdict            string `json:"verdict,omitempty"`
 }
 
 type YearHealthDTO struct {
@@ -44,6 +44,8 @@ type YearDashboard struct {
 	UncategorizedPaise int64               `json:"uncategorized_paise"`
 	MonthsWithData     int                 `json:"months_with_data"`
 	NeedsReviewMonths  int                 `json:"needs_review_months"`
+	NeedsReviewCount   int64               `json:"needs_review_count"` // live SQL, not from stored AI health
+	PendingCount       int64               `json:"pending_count"`      // live SQL
 	Months             []DashboardMonthBar `json:"months"`
 	Health             *YearHealthDTO      `json:"health"`
 }
@@ -125,6 +127,16 @@ func (s *HealthService) YearDashboard(ctx context.Context, year int) (*YearDashb
 		bars = append(bars, bar)
 	}
 
+	var needsReviewTotal, pendingTotal int64
+	_ = s.DB.WithContext(ctx).Model(&models.Transaction{}).
+		Where("transaction_date >= ? AND transaction_date < ? AND classification_status = ?",
+			start, end, models.ClassificationNeedsReview).
+		Count(&needsReviewTotal).Error
+	_ = s.DB.WithContext(ctx).Model(&models.Transaction{}).
+		Where("transaction_date >= ? AND transaction_date < ? AND classification_status = ?",
+			start, end, models.ClassificationPending).
+		Count(&pendingTotal).Error
+
 	out := &YearDashboard{
 		Year:               year,
 		Years:              cal.Years,
@@ -133,6 +145,8 @@ func (s *HealthService) YearDashboard(ctx context.Context, year int) (*YearDashb
 		UncategorizedPaise: ya.Uncategorized,
 		MonthsWithData:     monthsWithData,
 		NeedsReviewMonths:  reviewMonths,
+		NeedsReviewCount:   needsReviewTotal,
+		PendingCount:       pendingTotal,
 		Months:             bars,
 	}
 
@@ -169,22 +183,22 @@ func (s *HealthService) GenerateYearHealth(ctx context.Context, year int) (*Year
 	if err != nil {
 		return nil, err
 	}
-	scored := classification.EnrichHealth(&signals)
-
-	tip := signals.Headline
-	modelName := "deterministic"
-	if s.Client != nil && s.Client.Model != "" {
-		modelName = s.Client.Model
-		if h, focus, err := s.Client.GenerateHeadline(ctx, fmt.Sprintf("%d", year), signals, scored); err != nil {
-			s.Log.Warn("year health headline failed; using fallback", "year", year, "err", err)
-		} else {
-			tip = h
-			signals.Headline = h
-			if focus != "" {
-				signals.FocusCategory = focus
-			}
-		}
+	if s.Client == nil || s.Client.Model == "" {
+		return nil, fmt.Errorf("%w: configure OLLAMA_HEALTH_MODEL and run ./scripts/pull-ollama-model.sh", classification.ErrHealthModelMissing)
 	}
+	if err := classification.EnsureHealthModelPulled(ctx, s.Client.BaseURL, s.Client.Model, s.Client.Model); err != nil {
+		return nil, err
+	}
+	report, err := s.Client.GenerateHealthReport(ctx, fmt.Sprintf("%d", year), signals)
+	if err != nil {
+		return nil, err
+	}
+	scored := classification.ApplyModelReport(&signals, report)
+	tip := signals.Headline
+	if tip == "" && !signals.Reliable {
+		tip = signals.UnreliableReason
+	}
+	modelName := s.Client.Model
 
 	sigJSON, err := json.Marshal(signals)
 	if err != nil {

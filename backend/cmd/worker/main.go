@@ -36,17 +36,26 @@ func main() {
 		UploadDir: cfg.UploadDir,
 		Log:       logger,
 	}
+	txnSvc := &services.TransactionService{DB: db}
+	healthSvc := &services.HealthService{
+		DB:     db,
+		Txns:   txnSvc,
+		Client: classification.NewHealthClient(cfg.OllamaBaseURL, cfg.OllamaHealthModel),
+		Log:    logger,
+	}
 	classifySvc := &services.ClassifyService{
 		DB:          db,
 		Client:      classification.NewClient(cfg.OllamaBaseURL, cfg.OllamaModel, cfg.ClassificationMinConfidence),
+		Asynq:       asynqClient,
 		Log:         logger,
 		Concurrency: cfg.ClassifyConcurrency,
 	}
 
 	srv := asynq.NewServer(redisOpt, asynq.Config{
-		Concurrency: 2,
+		Concurrency: 3,
 		Queues: map[string]int{
 			"default": 10,
+			"health":  1,
 		},
 	})
 
@@ -54,11 +63,17 @@ func main() {
 	h := &worker.Handlers{
 		Imports:  importSvc,
 		Classify: classifySvc,
+		Health:   healthSvc,
 		Log:      logger,
 	}
 	h.Register(mux)
 
-	logger.Info("worker starting", "redis", cfg.RedisAddr, "model", cfg.OllamaModel, "classify_concurrency", cfg.ClassifyConcurrency)
+	logger.Info("worker starting",
+		"redis", cfg.RedisAddr,
+		"model", cfg.OllamaModel,
+		"health_model", cfg.OllamaHealthModel,
+		"classify_concurrency", cfg.ClassifyConcurrency,
+	)
 	if err := srv.Run(mux); err != nil {
 		log.Fatal(err)
 	}

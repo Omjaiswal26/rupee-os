@@ -23,15 +23,15 @@ type HealthService struct {
 }
 
 type MonthHealthDTO struct {
-	Month            string                       `json:"month"`
-	Score            int                          `json:"score"`
-	Verdict          string                       `json:"verdict"`
-	Tip              string                       `json:"tip"`
-	Signals          classification.HealthSignals `json:"signals"`
-	ModelName        string                       `json:"model_name"`
-	GeneratedAt      time.Time                    `json:"generated_at"`
-	Classifying      bool                         `json:"classifying"`
-	Stale            bool                         `json:"stale"`
+	Month       string                       `json:"month"`
+	Score       int                          `json:"score"`
+	Verdict     string                       `json:"verdict"`
+	Tip         string                       `json:"tip"`
+	Signals     classification.HealthSignals `json:"signals"`
+	ModelName   string                       `json:"model_name"`
+	GeneratedAt time.Time                    `json:"generated_at"`
+	Classifying bool                         `json:"classifying"`
+	Stale       bool                         `json:"stale"`
 }
 
 func (s *HealthService) Get(ctx context.Context, monthKey string) (*MonthHealthDTO, error) {
@@ -44,7 +44,7 @@ func (s *HealthService) Get(ctx context.Context, monthKey string) (*MonthHealthD
 	if err != nil {
 		return nil, err
 	}
-	return s.toDTO(monthKey, &row, false)
+	return s.toDTO(ctx, monthKey, &row)
 }
 
 // Generate builds signals, scores, asks the health model for a tip, and upserts the row.
@@ -69,23 +69,23 @@ func (s *HealthService) Generate(ctx context.Context, monthKey string) (*MonthHe
 	if err != nil {
 		return nil, err
 	}
-	scored := classification.EnrichHealth(&signals)
-
-	tip := signals.Headline
-	modelName := "deterministic"
-	// Skip LLM when data quality is too poor — UI already shows the reliability callout.
-	if signals.Reliable && s.Client != nil && s.Client.Model != "" {
-		modelName = s.Client.Model
-		if h, focus, err := s.Client.GenerateHeadline(ctx, monthKey, signals, scored); err != nil {
-			s.Log.Warn("health headline failed; using fallback", "month", monthKey, "err", err)
-		} else {
-			tip = h
-			signals.Headline = h
-			if focus != "" {
-				signals.FocusCategory = focus
-			}
-		}
+	if s.Client == nil || s.Client.Model == "" {
+		return nil, fmt.Errorf("%w: configure OLLAMA_HEALTH_MODEL and run ./scripts/pull-ollama-model.sh", classification.ErrHealthModelMissing)
 	}
+	if err := classification.EnsureHealthModelPulled(ctx, s.Client.BaseURL, s.Client.Model, s.Client.Model); err != nil {
+		return nil, err
+	}
+
+	report, err := s.Client.GenerateHealthReport(ctx, monthKey, signals)
+	if err != nil {
+		return nil, err
+	}
+	scored := classification.ApplyModelReport(&signals, report)
+	tip := signals.Headline
+	if tip == "" && !signals.Reliable {
+		tip = signals.UnreliableReason
+	}
+	modelName := s.Client.Model
 
 	sigJSON, err := json.Marshal(signals)
 	if err != nil {
@@ -113,7 +113,7 @@ func (s *HealthService) Generate(ctx context.Context, monthKey string) (*MonthHe
 	}
 
 	s.Log.Info("month health saved", "month", monthKey, "score", row.Score, "model", row.ModelName)
-	return s.toDTO(monthKey, &row, false)
+	return s.toDTO(ctx, monthKey, &row)
 }
 
 func (s *HealthService) DeleteMonth(ctx context.Context, monthKey string) error {
@@ -192,12 +192,12 @@ func (s *HealthService) buildSignals(ctx context.Context, monthKey string, summa
 	}, nil
 }
 
-func (s *HealthService) toDTO(monthKey string, row *models.MonthHealthReport, stale bool) (*MonthHealthDTO, error) {
+func (s *HealthService) toDTO(ctx context.Context, monthKey string, row *models.MonthHealthReport) (*MonthHealthDTO, error) {
 	var signals classification.HealthSignals
 	if len(row.Signals) > 0 {
 		_ = json.Unmarshal(row.Signals, &signals)
 	}
-	summary, _ := s.Txns.Summary(context.Background(), monthKey)
+	summary, _ := s.Txns.Summary(ctx, monthKey)
 	classifying := summary != nil && summary.Classifying
 	return &MonthHealthDTO{
 		Month:       monthKey,
@@ -208,6 +208,6 @@ func (s *HealthService) toDTO(monthKey string, row *models.MonthHealthReport, st
 		ModelName:   row.ModelName,
 		GeneratedAt: row.GeneratedAt,
 		Classifying: classifying,
-		Stale:       stale,
+		Stale:       false, // counts come from live SQL elsewhere; AI snapshot is intentionally stored
 	}, nil
 }

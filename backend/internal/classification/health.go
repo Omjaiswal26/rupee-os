@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 )
+
+// ErrHealthModelMissing means the configured health Ollama model is not pulled.
+var ErrHealthModelMissing = errors.New("health model not pulled")
 
 // UncategorizedReliableMax — at/above this ratio the report is marked unreliable.
 const UncategorizedReliableMax = 0.20
@@ -29,12 +33,12 @@ type HealthSignals struct {
 	TopCategories      []CategoryShare `json:"top_categories"`
 
 	// Derived (stored with signals so the UI stays self-contained).
-	Reliable         bool           `json:"reliable"`
-	UnreliableReason string         `json:"unreliable_reason,omitempty"`
+	Reliable         bool            `json:"reliable"`
+	UnreliableReason string          `json:"unreliable_reason,omitempty"`
 	Insights         []HealthInsight `json:"insights,omitempty"`
 	Drivers          []HealthDriver  `json:"drivers,omitempty"`
-	Headline         string         `json:"headline,omitempty"`
-	FocusCategory    string         `json:"focus_category,omitempty"`
+	Headline         string          `json:"headline,omitempty"`
+	FocusCategory    string          `json:"focus_category,omitempty"`
 }
 
 type CategoryShare struct {
@@ -288,7 +292,7 @@ func FallbackHeadline(s HealthSignals, score HealthScore) string {
 	}
 }
 
-// HealthClient calls a heavier Ollama model once per month for a short headline.
+// HealthClient calls a heavier Ollama model for the full month/year health report.
 type HealthClient struct {
 	BaseURL string
 	Model   string
@@ -299,44 +303,73 @@ func NewHealthClient(baseURL, model string) *HealthClient {
 	return &HealthClient{
 		BaseURL: strings.TrimRight(baseURL, "/"),
 		Model:   model,
-		HTTP:    &http.Client{Timeout: 120 * time.Second},
+		HTTP:    &http.Client{Timeout: 180 * time.Second},
 	}
 }
 
-type healthTipResponse struct {
-	Headline      string `json:"headline"`
-	Tip           string `json:"tip"` // legacy
-	FocusCategory string `json:"focus_category"`
+// ModelHealthReport is the structured output we require from the health model.
+type ModelHealthReport struct {
+	Score            int             `json:"score"`
+	Verdict          string          `json:"verdict"`
+	Headline         string          `json:"headline"`
+	FocusCategory    string          `json:"focus_category"`
+	Reliable         bool            `json:"reliable"`
+	UnreliableReason string          `json:"unreliable_reason"`
+	Insights         []HealthInsight `json:"insights"`
+	Drivers          []HealthDriver  `json:"drivers"`
 }
 
-func (c *HealthClient) GenerateTip(ctx context.Context, period string, signals HealthSignals, score HealthScore) (string, error) {
-	headline, _, err := c.GenerateHeadline(ctx, period, signals, score)
-	return headline, err
+// EnsureHealthModelPulled fails if the health weights are missing (no deterministic fallback).
+func EnsureHealthModelPulled(ctx context.Context, baseURL, classifyModel, healthModel string) error {
+	if strings.TrimSpace(healthModel) == "" {
+		return fmt.Errorf("%w: OLLAMA_HEALTH_MODEL is empty — set it and run ./scripts/pull-ollama-model.sh", ErrHealthModelMissing)
+	}
+	st := CheckOllamaModels(ctx, baseURL, classifyModel, healthModel)
+	if !st.Reachable {
+		return fmt.Errorf("%w: ollama unreachable (%s) — start the ollama service, then run ./scripts/pull-ollama-model.sh", ErrHealthModelMissing, st.Error)
+	}
+	if !st.HealthPresent {
+		return fmt.Errorf("%w: %q not found — run ./scripts/pull-ollama-model.sh", ErrHealthModelMissing, healthModel)
+	}
+	return nil
 }
 
-// GenerateHeadline asks the model for a short headline (+ optional focus category).
-func (c *HealthClient) GenerateHeadline(ctx context.Context, period string, signals HealthSignals, score HealthScore) (headline string, focus string, err error) {
-	// Strip derived fields from the model payload to reduce confusion.
-	payloadSignals := signals
-	payloadSignals.Insights = nil
-	payloadSignals.Drivers = nil
-	payloadSignals.Headline = ""
-	payloadSignals.UnreliableReason = ""
+// GenerateHealthReport asks the model for score, verdict, headline, insights, and drivers.
+// Aggregates are inputs only — there is no deterministic score/tip fallback.
+func (c *HealthClient) GenerateHealthReport(ctx context.Context, period string, signals HealthSignals) (*ModelHealthReport, error) {
+	if c == nil || c.Model == "" {
+		return nil, fmt.Errorf("%w: health client not configured", ErrHealthModelMissing)
+	}
 
+	payloadSignals := map[string]any{
+		"income_paise":        signals.IncomePaise,
+		"expense_paise":       signals.ExpensePaise,
+		"uncategorized_paise": signals.UncategorizedPaise,
+		"investment_paise":    signals.InvestmentPaise,
+		"transaction_count":   signals.TransactionCount,
+		"pending_count":       signals.PendingCount,
+		"needs_review_count":  signals.NeedsReviewCount,
+		"savings_rate":        signals.SavingsRate,
+		"invest_share":        signals.InvestShare,
+		"uncategorized_ratio": signals.UncategorizedRatio,
+		"top_categories":      signals.TopCategories,
+	}
 	payload, _ := json.Marshal(map[string]any{
-		"period":   period,
-		"score":    score.Score,
-		"verdict":  score.Verdict,
-		"reliable": signals.Reliable,
-		"signals":  payloadSignals,
-		"focus_hint": signals.FocusCategory,
+		"period":  period,
+		"signals": payloadSignals,
 	})
-	prompt := fmt.Sprintf(`You are a concise India personal-finance coach. Given ONLY these period aggregates (JSON), return JSON with:
-- "headline": max 10 words, no markdown, no period at end unless needed. Not a paragraph.
-- "focus_category": one category from top_categories, or "" if none.
 
-If reliable is false, headline must urge categorizing / review first.
-Do not invent numbers or merchants.
+	prompt := fmt.Sprintf(`You are an India personal-finance analyst. Using ONLY the period aggregates JSON, return one JSON object:
+- score: integer 0-100
+- verdict: exactly one of Strong | Stable | Needs attention | Critical
+- headline: max 12 words, no markdown, not a paragraph
+- focus_category: one name from top_categories, or "Other" if uncategorized is the issue, or ""
+- reliable: false if uncategorized_ratio >= 0.2 OR needs_review share is very high; else true
+- unreliable_reason: short reason when reliable is false, else ""
+- insights: 3-4 objects {id, label, value, tone} with tone in good|ok|warn|bad. Prefer Uncategorized, Savings, Invested, and top spend category. Values like "28%%" using the given ratios — do not invent figures.
+- drivers: 2-5 objects {label, delta} where delta is integer score contribution (negative hurts). Labels short.
+
+Do not invent merchants or amounts not implied by the signals.
 
 Data:
 %s
@@ -349,59 +382,137 @@ Data:
 		Format: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"headline":       map[string]any{"type": "string"},
-				"focus_category": map[string]any{"type": "string"},
+				"score":             map[string]any{"type": "integer"},
+				"verdict":           map[string]any{"type": "string"},
+				"headline":          map[string]any{"type": "string"},
+				"focus_category":    map[string]any{"type": "string"},
+				"reliable":          map[string]any{"type": "boolean"},
+				"unreliable_reason": map[string]any{"type": "string"},
+				"insights":          map[string]any{"type": "array"},
+				"drivers":           map[string]any{"type": "array"},
 			},
-			"required": []string{"headline"},
+			"required": []string{"score", "verdict", "headline", "reliable", "insights", "drivers"},
 		},
 		Options: map[string]any{
-			"temperature": 0.25,
-			"num_predict": 80,
+			"temperature": 0.2,
+			"num_predict": 400,
 		},
 	})
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/api/generate", bytes.NewReader(body))
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return "", "", fmt.Errorf("ollama health request: %w", err)
+		return nil, fmt.Errorf("ollama health request: %w", err)
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {
-		return "", "", fmt.Errorf("ollama health status %d: %s", resp.StatusCode, truncate(string(raw), 200))
+		msg := truncate(string(raw), 200)
+		if strings.Contains(strings.ToLower(msg), "not found") {
+			return nil, fmt.Errorf("%w: %s", ErrHealthModelMissing, msg)
+		}
+		return nil, fmt.Errorf("ollama health status %d: %s", resp.StatusCode, msg)
 	}
 
 	var or ollamaResponse
 	if err := json.Unmarshal(raw, &or); err != nil {
-		return "", "", err
+		return nil, err
 	}
 	tip := strings.TrimSpace(or.Response)
+	var parsed ModelHealthReport
 	if i := strings.Index(tip, "{"); i >= 0 {
 		if j := strings.LastIndex(tip, "}"); j > i {
-			var ht healthTipResponse
-			if err := json.Unmarshal([]byte(tip[i:j+1]), &ht); err == nil {
-				h := strings.TrimSpace(ht.Headline)
-				if h == "" {
-					h = strings.TrimSpace(ht.Tip)
-				}
-				if h != "" {
-					return clampHeadline(h), sanitizeFocus(ht.FocusCategory, signals), nil
-				}
+			if err := json.Unmarshal([]byte(tip[i:j+1]), &parsed); err != nil {
+				return nil, fmt.Errorf("decode health model JSON: %w", err)
 			}
 		}
 	}
-	return FallbackHeadline(signals, score), signals.FocusCategory, nil
+	if parsed.Verdict == "" && parsed.Headline == "" {
+		return nil, fmt.Errorf("health model returned empty report")
+	}
+	return normalizeModelHealth(&parsed, signals), nil
+}
+
+func normalizeModelHealth(m *ModelHealthReport, signals HealthSignals) *ModelHealthReport {
+	if m.Score < 0 {
+		m.Score = 0
+	}
+	if m.Score > 100 {
+		m.Score = 100
+	}
+	switch m.Verdict {
+	case "Strong", "Stable", "Needs attention", "Critical":
+	default:
+		switch {
+		case m.Score >= 80:
+			m.Verdict = "Strong"
+		case m.Score >= 60:
+			m.Verdict = "Stable"
+		case m.Score >= 40:
+			m.Verdict = "Needs attention"
+		default:
+			m.Verdict = "Critical"
+		}
+	}
+	m.Headline = clampHeadline(m.Headline)
+	m.FocusCategory = sanitizeFocus(m.FocusCategory, signals)
+
+	// Hard data-quality gate — model may understate uncategorized risk.
+	if signals.UncategorizedRatio >= UncategorizedReliableMax {
+		m.Reliable = false
+		if strings.TrimSpace(m.UnreliableReason) == "" {
+			m.UnreliableReason = fmt.Sprintf(
+				"%.0f%% of money is Uncategorized — categorize, then regenerate.",
+				signals.UncategorizedRatio*100,
+			)
+		}
+	}
+
+	if len(m.Insights) > 4 {
+		m.Insights = m.Insights[:4]
+	}
+	for i := range m.Insights {
+		switch m.Insights[i].Tone {
+		case "good", "ok", "warn", "bad":
+		default:
+			m.Insights[i].Tone = "ok"
+		}
+		m.Insights[i].Label = strings.TrimSpace(m.Insights[i].Label)
+		m.Insights[i].Value = strings.TrimSpace(m.Insights[i].Value)
+		if m.Insights[i].ID == "" {
+			m.Insights[i].ID = fmt.Sprintf("insight_%d", i)
+		}
+	}
+	if len(m.Drivers) > 6 {
+		m.Drivers = m.Drivers[:6]
+	}
+	return m
+}
+
+// ApplyModelReport copies model output onto signals for storage/UI.
+func ApplyModelReport(signals *HealthSignals, m *ModelHealthReport) HealthScore {
+	signals.Reliable = m.Reliable
+	signals.UnreliableReason = strings.TrimSpace(m.UnreliableReason)
+	signals.Headline = m.Headline
+	if !m.Reliable {
+		// UI uses reliability callout; avoid competing essay.
+		signals.Headline = ""
+	}
+	signals.FocusCategory = m.FocusCategory
+	signals.Insights = m.Insights
+	signals.Drivers = m.Drivers
+	return HealthScore{Score: m.Score, Verdict: m.Verdict}
 }
 
 func sanitizeFocus(focus string, s HealthSignals) string {
 	focus = strings.TrimSpace(focus)
 	if focus == "" {
-		return s.FocusCategory
+		return ""
 	}
 	for _, c := range s.TopCategories {
 		if strings.EqualFold(c.Category, focus) {
@@ -411,13 +522,12 @@ func sanitizeFocus(focus string, s HealthSignals) string {
 	if strings.EqualFold(focus, "Uncategorized") || strings.EqualFold(focus, "Other") {
 		return "Other"
 	}
-	return s.FocusCategory
+	return ""
 }
 
 func clampHeadline(s string) string {
 	s = strings.TrimSpace(s)
 	s = strings.Trim(s, `"'`)
-	// Collapse to one line.
 	s = strings.ReplaceAll(s, "\n", " ")
 	words := strings.Fields(s)
 	if len(words) > 12 {
@@ -430,7 +540,7 @@ func clampHeadline(s string) string {
 	return s
 }
 
-// FallbackTip kept for older call sites / year health.
+// FallbackTip kept for tests / legacy helpers.
 func FallbackTip(s HealthSignals, score HealthScore) string {
 	return FallbackHeadline(s, score)
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 
@@ -64,6 +65,27 @@ func main() {
 		Log:         logger,
 	}
 	api.Register(r)
+
+	// Soft preflight: warn if classify weights missing (do not exit — first-run needs pull).
+	go func() {
+		st := classification.CheckOllamaModels(
+			context.Background(),
+			cfg.OllamaBaseURL,
+			cfg.OllamaModel,
+			cfg.OllamaHealthModel,
+		)
+		if !st.Reachable {
+			logger.Warn("ollama not reachable at boot", "base_url", cfg.OllamaBaseURL, "err", st.Error, "hint", st.Hint)
+			return
+		}
+		if !st.ClassifyPresent {
+			logger.Warn("classify model not pulled", "model", st.ClassifyModel, "hint", st.Hint)
+		} else if !st.HealthPresent {
+			logger.Warn("health model not pulled (optional)", "model", st.HealthModel, "hint", st.Hint)
+		} else {
+			logger.Info("ollama models ready", "classify", st.ClassifyModel, "health", st.HealthModel)
+		}
+	}()
 
 	logger.Info("api listening", "addr", cfg.APIAddr)
 	if err := r.Run(cfg.APIAddr); err != nil {

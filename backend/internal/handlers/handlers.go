@@ -21,8 +21,8 @@ import (
 )
 
 type API struct {
-	Imports *services.ImportService
-	Txns    *services.TransactionService
+	Imports     *services.ImportService
+	Txns        *services.TransactionService
 	MonthHealth *services.HealthService
 	Cfg         config.Config
 	Log         *slog.Logger
@@ -54,10 +54,21 @@ func (a *API) Register(r *gin.Engine) {
 
 	r.GET("/rules", a.ListRules)
 	r.GET("/meta/categories", a.ListCategories)
+	r.GET("/meta/ollama", a.OllamaStatus)
 }
 
 func (a *API) Health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "api"})
+}
+
+func (a *API) OllamaStatus(c *gin.Context) {
+	st := classification.CheckOllamaModels(
+		c.Request.Context(),
+		a.Cfg.OllamaBaseURL,
+		a.Cfg.OllamaModel,
+		a.Cfg.OllamaHealthModel,
+	)
+	c.JSON(http.StatusOK, st)
 }
 
 func (a *API) CreateImport(c *gin.Context) {
@@ -69,8 +80,8 @@ func (a *API) CreateImport(c *gin.Context) {
 	maxBytes := int64(a.Cfg.MaxUploadMB) * 1024 * 1024
 	if file.Size > maxBytes {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "file too large",
-			"code":  "FILE_TOO_LARGE",
+			"error":  "file too large",
+			"code":   "FILE_TOO_LARGE",
 			"max_mb": a.Cfg.MaxUploadMB,
 		})
 		return
@@ -202,6 +213,14 @@ func (a *API) GenerateYearHealth(c *gin.Context) {
 	}
 	rep, err := a.MonthHealth.GenerateYearHealth(c.Request.Context(), year)
 	if err != nil {
+		if errors.Is(err, classification.ErrHealthModelMissing) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error": err.Error(),
+				"code":  "HEALTH_MODEL_MISSING",
+				"hint":  "run ./scripts/pull-ollama-model.sh",
+			})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -237,9 +256,9 @@ func (a *API) ReclassifyMonth(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusAccepted, gin.H{
-		"month":          c.Param("month"),
-		"reset_count":    n,
-		"message":        "Reclassification queued. Pending transactions will be classified locally.",
+		"month":       c.Param("month"),
+		"reset_count": n,
+		"message":     "Reclassification queued. Pending transactions will be classified locally.",
 	})
 }
 
@@ -261,6 +280,14 @@ func (a *API) GenerateMonthHealth(c *gin.Context) {
 	month := c.Param("month")
 	rep, err := a.MonthHealth.Generate(c.Request.Context(), month)
 	if err != nil {
+		if errors.Is(err, classification.ErrHealthModelMissing) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error": err.Error(),
+				"code":  "HEALTH_MODEL_MISSING",
+				"hint":  "run ./scripts/pull-ollama-model.sh",
+			})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
