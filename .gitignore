@@ -32,3 +32,7 @@ frontend/next-env.d.ts
 
 # Docker
 *.log
+
+# Local draft docs (not for public repo)
+docs/ISSUES_SEED.md
+docs/ROADMAP.md

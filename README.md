@@ -7,7 +7,7 @@ Upload a bank statement (**XLSX or CSV**) → validate **one calendar month** �
 Statements never leave your machine. No cloud LLM.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-v0.1-blue.svg)](docs/ROADMAP.md)
+[![Status](https://img.shields.io/badge/status-v0.1-blue.svg)](#features-v01)
 
 ---
 
@@ -18,20 +18,16 @@ Statements never leave your machine. No cloud LLM.
 - **Month dashboard** — income / expense / uncategorized, category pie, searchable txn table
 - **Category chips** — icons + soft tints aligned with the pie
 - **Review queue** — group by payee; fix one or apply to matching narrations
-- **Month health** — deterministic score, insight metrics, reliability gate when uncategorized is high
-- **Year overview** — months with status, optional year health
+- **Month / year health** — after a month finishes classifying, the worker auto-queues month then year health (local larger Ollama model; pull required)
+- **Year overview** — months with status + stored AI year health
 
 ## Screenshots
 
-Add images under [`docs/screenshots/`](docs/screenshots/) (see that folder’s README), then uncomment:
-
-<!--
 | Month | Review | Health |
 |:-----:|:------:|:------:|
 | ![Month](docs/screenshots/month.png) | ![Review](docs/screenshots/review.png) | ![Health](docs/screenshots/health.png) |
--->
 
-*Screenshots coming soon — drop PNGs into `docs/screenshots/`.*
+![Overview](docs/screenshots/overview.png)
 
 ## Architecture
 
@@ -68,7 +64,7 @@ backend/cmd/worker/       Asynq worker
 backend/internal/         handlers, services, parser, classification
 backend/migrations/
 backend/testdata/         synthetic sample statements
-docs/                     challenges, roadmap, screenshots
+docs/                     challenges, screenshots
 docker-compose.yml
 ```
 
@@ -144,6 +140,7 @@ See [`.env.example`](.env.example). Important knobs:
 | `GET` | `/transactions/review` | attention queue |
 | `PATCH` | `/transactions/:id/classification` | correct + optional rule |
 | `GET` | `/meta/categories` | allowed categories |
+| `GET` | `/meta/ollama` | whether classify/health models are pulled |
 
 ## Local backend tests
 
@@ -156,17 +153,13 @@ go test ./...
 
 - **API unhealthy:** `docker compose logs api` — wait for Postgres/Redis.
 - **Import stuck queued:** `docker compose logs worker`.
-- **Classification pending forever:** pull the model (`./scripts/pull-ollama-model.sh`).
+- **Classification pending forever / banner “Classifier not ready”:** pull the model (`./scripts/pull-ollama-model.sh`). Check `GET /meta/ollama`.
 - **MULTI_MONTH error:** export a single calendar month from your bank.
 - **Reset everything:** `docker compose down -v` then `up --build` and re-pull the model.
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
-
-## Roadmap
-
-See [docs/ROADMAP.md](docs/ROADMAP.md). Building in public — Issues welcome.
 
 ## License
 
