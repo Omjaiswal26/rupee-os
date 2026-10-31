@@ -7,11 +7,13 @@ Upload a bank statement (**XLSX or CSV**) → validate **one calendar month** �
 Statements never leave your machine. No cloud LLM.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-v0.1-blue.svg)](#features-v01)
+[![Release](https://img.shields.io/github/v/release/Omjaiswal26/rupee-os)](https://github.com/Omjaiswal26/rupee-os/releases)
+
+Pre-1.0 — expect breaking changes between releases.
 
 ---
 
-## Features (v0.1)
+## Features
 
 - **Statement import** — Indian-style CSV/XLSX; one calendar month per file; duplicate detection
 - **Local classification** — Ollama (Qwen) + merchant keywords + learned rules
@@ -124,7 +126,7 @@ See [`.env.example`](.env.example). Important knobs:
 | `CLASSIFY_CONCURRENCY` | Parallel classify jobs |
 | `NEXT_PUBLIC_API_URL` | Browser → API |
 
-## API (v0.1)
+## API
 
 | Method | Path | Purpose |
 |--------|------|---------|
