@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type Transaction } from "@/lib/api";
 import { typeForCategory } from "@/lib/classify";
+import { displayPayeeName } from "@/lib/payee";
 import {
   ATTENTION_ACCENT,
   ATTENTION_CHIP_STYLE,
@@ -33,18 +34,13 @@ export function displayCategory(cat?: string | null): string {
   return cat;
 }
 
-/** Best-effort payee hint for "apply to all" label (mirrors backend slash parse). */
-function payeeHint(desc: string): string {
-  const parts = desc.split(/[/\\|]/).map((p) => p.trim()).filter(Boolean);
-  const noise =
-    /^(WDL|TFR|DEP|UPI|IMPS|NEFT|RTGS|DR|CR|PAY|PAYM|PAYMENT|HDFC|YESB|UTIB|ICIC|SBIN|AXIS|AIRP|PAYTM)$/i;
-  for (const p of parts) {
-    if (p.length < 2 || noise.test(p) || /^\d{3,}$/.test(p)) continue;
-    if (/^AT\d/i.test(p)) continue;
-    const letters = (p.match(/[A-Za-z]/g) || []).length;
-    if (letters >= 2) return p.replace(/\s+/g, " ").trim();
-  }
-  return "";
+/** Label for “apply to all” — same payee extraction as the Name column (not rail tokens). */
+function payeeHint(txn: Transaction): string {
+  const name = displayPayeeName(txn.merchant, txn.original_description).trim();
+  if (!name || name === "—") return "";
+  // Skip if we still only got rails (stale merchant / weak extract).
+  if (/^(WDL|TFR|DEP|UPI|IMPS|NEFT)(\s|$)/i.test(name)) return "";
+  return name.length > 28 ? `${name.slice(0, 26)}…` : name;
 }
 
 /** Category chip: same shape for all rows; amber help icon only when attention needed. */
@@ -65,7 +61,10 @@ export function CategoryCell({
   const [saving, setSaving] = useState<"one" | "all" | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const hint = useMemo(() => payeeHint(txn.original_description), [txn.original_description]);
+  const hint = useMemo(
+    () => payeeHint(txn),
+    [txn.id, txn.merchant, txn.original_description],
+  );
 
   useEffect(() => {
     setCategory(txn.category && txn.category !== "Other" ? txn.category : "");
